@@ -1,4 +1,4 @@
-const { writeFileSync, mkdirSync } = require("fs");
+const { writeFileSync, mkdirSync, existsSync } = require("fs");
 
 const TSCONFIG = `{
     "compilerOptions": {
@@ -21,6 +21,11 @@ if (!project) {
 const dirname = `src/${project}`;
 const configPath = `src/${project}/tsconfig.json`;
 const sourcePath = `src/${project}/${project}.ts`;
+
+if (existsSync(dirname)) {
+  console.error("The path %s already exists.", dirname);
+  process.exit(1);
+}
 
 try {
   mkdirSync(dirname);
