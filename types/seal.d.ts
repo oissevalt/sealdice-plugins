@@ -5,10 +5,7 @@ declare namespace seal {
    * @param ctx   玩家上下文, 将设定 `ctx.player.userId` 的名片.
    * @param tmpl  名片模版.
    */
-  export function applyPlayerGroupCardByTemplate(
-    ctx: MsgContext,
-    tmpl: string
-  ): string;
+  export function applyPlayerGroupCardByTemplate(ctx: MsgContext, tmpl: string): string;
 
   /**
    * 从提供的终结点信息和原始消息创造一个独立的上下文.
@@ -36,10 +33,7 @@ declare namespace seal {
    * @param cmdArgs   原始指令参数.
    * @see   CmdItemInfo.allowDelegate
    */
-  export function getCtxProxyFirst(
-    ctx: MsgContext,
-    cmdArgs: CmdArgs
-  ): MsgContext;
+  export function getCtxProxyFirst(ctx: MsgContext, cmdArgs: CmdArgs): MsgContext;
 
   /**
    * 创建一个新的 `Message` 实例, 其任何字段都是默认值.
@@ -54,11 +48,7 @@ declare namespace seal {
    * @param msg   原消息.
    * @param text  要发送的消息.
    */
-  export function replyToSender(
-    ctx: MsgContext,
-    msg: Message,
-    text: string
-  ): void;
+  export function replyToSender(ctx: MsgContext, msg: Message, text: string): void;
 
   /**
    * 私聊发送消息给 [`msg.sender.userId`]{@link Message.sender}.
@@ -66,11 +56,7 @@ declare namespace seal {
    * @param msg   原始消息.
    * @param text  要发送的消息.
    */
-  export function replyPerson(
-    ctx: MsgContext,
-    msg: Message,
-    text: string
-  ): void;
+  export function replyPerson(ctx: MsgContext, msg: Message, text: string): void;
 
   /**
    * 群聊发送消息给 [`msg.groupId`]{@link Message.groupId}, 原始消息必须是群聊事件.
@@ -166,12 +152,7 @@ declare namespace seal {
      * @param defaultValue  配置项默认值.
      * @param description   配置项描述.
      */
-    registerStringConfig(
-      info: ExtInfo,
-      key: string,
-      defaultValue: string,
-      description: string
-    ): void;
+    registerStringConfig(info: ExtInfo, key: string, defaultValue: string, description: string): void;
 
     /**
      * 注册一个整数型配置项. 如果 `info` 尚未被注册或 `defaultValue` 不是整数, 该函数会抛出一个异常.
@@ -180,12 +161,7 @@ declare namespace seal {
      * @param defaultValue  配置项默认值, 内部类型为 `int64`.
      * @param description   配置项描述.
      */
-    registerIntConfig(
-      info: ExtInfo,
-      key: string,
-      defaultValue: number,
-      description: string
-    ): void;
+    registerIntConfig(info: ExtInfo, key: string, defaultValue: number, description: string): void;
 
     /**
      * 注册一个布尔值配置项. 如果 `info` 尚未被注册, 该函数会抛出一个异常.
@@ -194,12 +170,7 @@ declare namespace seal {
      * @param defaultValue  配置项默认值.
      * @param description   配置项描述.
      */
-    registerBoolConfig(
-      info: ExtInfo,
-      key: string,
-      defaultValue: boolean,
-      description: string
-    ): void;
+    registerBoolConfig(info: ExtInfo, key: string, defaultValue: boolean, description: string): void;
 
     /**
      * 注册一个浮点数配置项. 如果 `info` 尚未被注册, 该函数会抛出一个异常.
@@ -208,12 +179,7 @@ declare namespace seal {
      * @param defaultValue  配置项默认值, 内部类型为 `float64`.
      * @param description   配置项描述.
      */
-    registerFloatConfig(
-      info: ExtInfo,
-      key: string,
-      defaultValue: number,
-      description: string
-    ): void;
+    registerFloatConfig(info: ExtInfo, key: string, defaultValue: number, description: string): void;
 
     /**
      * 注册一个模版配置项. 如果 `info` 尚未被注册, 该函数会抛出一个异常.
@@ -222,12 +188,7 @@ declare namespace seal {
      * @param defaultValue  配置项默认值.
      * @param description   配置项描述.
      */
-    registerTemplateConfig(
-      info: ExtInfo,
-      key: string,
-      defaultValue: string[],
-      description: string
-    ): void;
+    registerTemplateConfig(info: ExtInfo, key: string, defaultValue: string[], description: string): void;
 
     /**
      * 注册一个选项卡配置项. 如果 `info` 尚未被注册, 该函数会抛出一个异常.
@@ -253,12 +214,7 @@ declare namespace seal {
      * @param defaultValue  配置项默认值.
      * @param description   配置项描述.
      */
-    newConfigItem(
-      info: ExtInfo,
-      key: string,
-      defaultValue: any,
-      description: string
-    ): ConfigItem;
+    newConfigItem(info: ExtInfo, key: string, defaultValue: any, description: string): ConfigItem;
 
     /**
      * 注册不定个任意类型的配置项, 注意事项见 [`ConfigItem`]{@link ConfigItem} 各字段.
@@ -480,11 +436,7 @@ declare namespace seal {
      * 通常建议直接返回 `seal.ext.newCmdExecuteResult(true)`, 尽量不要将执行结果的 `solved` 字段设置为
      * `false`, 否则骰子会在控制台中打印令人困惑的"骰子关闭/忽略指令/未知指令"内容.
      */
-    solve: (
-      ctx: MsgContext,
-      msg: Message,
-      cmdArgs: CmdArgs
-    ) => CmdExecuteResult;
+    solve: (ctx: MsgContext, msg: Message, cmdArgs: CmdArgs) => CmdExecuteResult;
 
     /**
      * 是否允许代骰. 如果为 `false`，在使用指令时 @ 骰子以外的用户(无论此用户是否被标记为骰子),
@@ -624,11 +576,7 @@ declare namespace seal {
     onNotCommandReceived: (ctx: MsgContext, msg: Message) => void;
 
     /** 收到指令(包括本插件的指令和其他插件的指令)时的回调函数. 在正常执行完指令后被调用. */
-    onCommandReceived: (
-      ctx: MsgContext,
-      msg: Message,
-      cmdArgs: CmdArgs
-    ) => void;
+    onCommandReceived: (ctx: MsgContext, msg: Message, cmdArgs: CmdArgs) => void;
 
     /** 收到任何信息时的回调函数. 如果信息是指令, 则在处理完后被调用. */
     onMessageReceived: (ctx: MsgContext, msg: Message) => void;
@@ -829,4 +777,13 @@ declare namespace seal {
 
     // 省略了许多不适合在 JS 环境使用的方法.
   }
+
+  /** 自定义游戏规则，目前不是很完善 */
+  export const gameSystem: {
+    /**
+     * 导入JSON规则模板。
+     */
+    newTemplate(data: string): void;
+    newTemplateByYaml(data: string): void;
+  };
 }
