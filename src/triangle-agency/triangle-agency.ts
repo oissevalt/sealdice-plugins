@@ -60,7 +60,7 @@ const GAME_TEMPLATE = {
   },
   setConfig: {
     diceSides: 4,
-    keys: ["hogwarts", "hp"],
+    keys: ["ta", "triangle-agency"],
     enableTip: "已切换至4面骰，并自动开启ta扩展",
     relatedExt: ["dnd5e", "coc7", "ta"], // 不能乱，dnd 的 st 不兼容所以后导入 coc 的覆盖它
   },
@@ -129,25 +129,18 @@ CommandTa.solve = (context, message, commandArguments) => {
     const threeCountOriginal = intermediate.filter((it) => it == 3).length;
     const threeCountBurned = threeCountOriginal - burnout;
     const markedIntermediate = markResults(intermediate, burnout);
-    switch (threeCountBurned) {
-      case 3: {
-        const reply = seal.formatTmpl(context, getBigSuccessMessage(repeat > 1));
-        results.push(`6D4=${markedIntermediate} ${reply}`);
-        chaosGenerated += 0; // always stable
-        break;
-      }
-      case 1: {
-        const reply = seal.formatTmpl(context, getSuccessMessage(repeat > 1));
-        results.push(`6D4=${markedIntermediate} ${reply}`);
-        chaosGenerated += 6 - threeCountOriginal + burnout;
-        break;
-      }
-      default: {
-        const reply = seal.formatTmpl(context, getFailureMessage(repeat > 1));
-        results.push(`6D4=${markedIntermediate} ${reply}`);
-        chaosGenerated += 6 - threeCountOriginal + burnout;
-        break;
-      }
+    if (threeCountBurned == 3) {
+      const reply = seal.formatTmpl(context, getBigSuccessMessage(repeat > 1));
+      results.push(`6D4=${markedIntermediate} ${reply}`);
+      chaosGenerated += 0; // always stable
+    } else if (threeCountBurned > 0) {
+      const reply = seal.formatTmpl(context, getSuccessMessage(repeat > 1));
+      results.push(`6D4=${markedIntermediate} ${reply}`);
+      chaosGenerated += 6 - threeCountOriginal + burnout;
+    } else {
+      const reply = seal.formatTmpl(context, getFailureMessage(repeat > 1));
+      results.push(`6D4=${markedIntermediate} ${reply}`);
+      chaosGenerated += 6 - threeCountOriginal + burnout;
     }
   }
 
