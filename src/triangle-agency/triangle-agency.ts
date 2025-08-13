@@ -1,15 +1,18 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      1.0.1
-// @timestamp    2025-08-13 13:00
+// @version      1.1.0
+// @timestamp    2025-08-13 18:00
 // @license      MIT
-// @description  支持三角机构（Triangle Agency）规则，包括 .ta 检定和 .cs 混沌值管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
-// @homepageURL  https://github.com/oissevalt
+// @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.cs 混沌值管理和 .fs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
+// @homepageURL  https://github.com/oissevalt/sealdice-plugins
 // ==/UserScript==
 
 /**
  * 更新日志
+ * 1.1.0:
+ * - 新增 tr 检定用于现实改写请求
+ * - 新增 fs 指令用于管理现实改写失败
  * 1.0.1:
  * - 修复了代骰时用户变量的读取问题
  * - 修复了使用自定义回复时，格式化不正确的问题
@@ -19,7 +22,7 @@
 
 const EXT_NAME = "triangle-agency";
 const EXT_AUTHOR = "败雪、檀轶步棋";
-const EXT_VERSION = "1.0.1";
+const EXT_VERSION = "1.1.0";
 
 const TA_MAX_EXECTIME_STR = "TriangleAgency:MaxExecTime";
 const TA_MAX_EXECTIME = 5;
@@ -46,6 +49,8 @@ const TA_CUSTOM_EXCESMSG_STR = "TriangleAgency:CustomExcesMsg";
 const TA_CUSTOM_EXCESMSG = "检定轮数过多，机构不予支持。";
 const TA_CHAOS_VAR_STR = "TriangleAgency:ChaosVar";
 const TA_CHAOS_VAR = "$g混沌";
+const TA_RAFAIL_VAR_STR = "TriangleAgency:RaFailVar";
+const TA_RAFAIL_VAR = "$g改写失败";
 
 const GAME_TEMPLATE = {
   name: "ta",
@@ -107,7 +112,8 @@ const Extension = getOrRegisterExtension();
 
 const CommandTa = seal.ext.newCmdItemInfo();
 CommandTa.name = "ta";
-CommandTa.help = ".ta <属性/质保数量> --c // 添加 --c 选项则不修改群组混沌值";
+CommandTa.help = `.ta <属性/质保数量> [--c] // 技能检验，添加 --c 选项则不修改群组混沌值
+.tr <属性/质保数量> [--c] [--f] // 现实改写检验，--c 参数同，--f 则不占用改写失败次数`;
 CommandTa.allowDelegate = true;
 CommandTa.enableExecuteTimesParse = true;
 CommandTa.solve = (context, message, commandArguments) => {
@@ -132,9 +138,16 @@ CommandTa.solve = (context, message, commandArguments) => {
     return executionResult;
   }
 
-  const burnout = attributeValue > 0 ? 0 : Math.abs(attributeValue) + 1;
+  const failureVarName = seal.ext.getStringConfig(Extension, TA_RAFAIL_VAR_STR);
+  const chaosVarName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
+
+  const abilityBurnout = attributeValue > 0 ? 0 : Math.abs(attributeValue) + 1;
+  const failureBurnout = commandArguments.command != "tr" ? 0 : seal.vars.intGet(context, failureVarName)[0];
+  const totalBurnout = abilityBurnout + failureBurnout;
+
   const results = [];
   let chaosGenerated = 0;
+  let failuresGenerated = 0;
   for (let i = 0; i < repeat; i++) {
     const intermediate = [];
     for (let j = 0; j < 6; j++) {
@@ -142,8 +155,8 @@ CommandTa.solve = (context, message, commandArguments) => {
       intermediate.push(result);
     }
     const threeCountOriginal = intermediate.filter((it) => it == 3).length;
-    const threeCountBurned = threeCountOriginal - burnout;
-    const markedIntermediate = markResults(intermediate, burnout);
+    const threeCountBurned = threeCountOriginal - totalBurnout;
+    const markedIntermediate = markResults(intermediate, totalBurnout);
     if (threeCountBurned == 3) {
       const reply = seal.format(targetUser, getBigSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
@@ -151,36 +164,52 @@ CommandTa.solve = (context, message, commandArguments) => {
     } else if (threeCountBurned > 0) {
       const reply = seal.format(targetUser, getSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
-      chaosGenerated += 6 - threeCountOriginal + burnout;
+      chaosGenerated += 6 - threeCountBurned;
     } else {
       const reply = seal.format(targetUser, getFailureMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
-      chaosGenerated += 6 - threeCountOriginal + burnout;
+      chaosGenerated += 6 - threeCountBurned;
+      if (commandArguments.command == "tr") {
+        failuresGenerated++;
+      }
     }
   }
 
-  const kwarg = commandArguments.getKwarg("c");
-  if (kwarg) {
+  if (commandArguments.getKwarg("c")) {
     chaosGenerated = 0;
   }
 
-  const variableName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
+  if (commandArguments.getKwarg("f")) {
+    failuresGenerated = 0;
+  }
+
   if (chaosGenerated != 0) {
-    const [chaos, _] = seal.vars.intGet(context, variableName);
-    seal.vars.intSet(context, variableName, chaos + chaosGenerated);
+    const [chaos, _] = seal.vars.intGet(context, chaosVarName);
+    seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
+  }
+
+  if (failuresGenerated != 0) {
+    seal.vars.intSet(context, failureVarName, failureBurnout + failuresGenerated);
   }
 
   seal.vars.strSet(targetUser, "$t属性表达式文本", attributeName);
   const prefix = seal.format(targetUser, chooseRandomOption(seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR)));
-  const reply = `${prefix}${results.join("\n")}\n（本次检定拥有${burnout}点燃尽，产生${chaosGenerated}点混沌，${
-    attributeValue < 0 ? 0 : attributeValue
-  }次质保可用）`;
+  const suffix =
+    commandArguments.command != "tr"
+      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${
+          attributeValue < 0 ? 0 : attributeValue
+        }次质保可用）`
+      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${
+          attributeValue < 0 ? 0 : attributeValue
+        }次质保可用）`;
+  const reply = `${prefix}${results.join("\n")}\n${suffix}`;
   seal.replyToSender(context, message, reply);
 
   return executionResult;
 };
 
-Extension.cmdMap[CommandTa.name] = CommandTa;
+Extension.cmdMap["ta"] = CommandTa;
+Extension.cmdMap["tr"] = CommandTa;
 
 const CommandCs = seal.ext.newCmdItemInfo();
 CommandCs.name = "cs";
@@ -224,6 +253,50 @@ CommandCs.solve = (context, message, commandArguments) => {
 };
 
 Extension.cmdMap[CommandCs.name] = CommandCs;
+
+const CommandFs = seal.ext.newCmdItemInfo();
+CommandFs.name = "fs";
+CommandFs.help =
+  ".fs // 展示群内现实改写失败数\n.fs <加减值> // 增加或减少现实改写失败数\n.fsst <数值> // 设置现实改写失败数";
+CommandFs.solve = (context, message, commandArguments) => {
+  const executionResult = seal.ext.newCmdExecuteResult(true);
+  commandArguments.chopPrefixToArgsWith("st");
+
+  let subcommand = commandArguments.getArgN(1);
+  const isIncrement = subcommand != "st";
+  if (!isIncrement) {
+    subcommand = commandArguments.getArgN(2);
+  }
+  const variableName = seal.ext.getStringConfig(Extension, TA_RAFAIL_VAR_STR);
+  switch (subcommand) {
+    case "": {
+      const [failures, _] = seal.vars.intGet(context, variableName);
+      seal.replyToSender(context, message, `当前地点现实改写失败次数: ${failures}`);
+      break;
+    }
+    case "help": {
+      executionResult.showHelp = true;
+      break;
+    }
+    default: {
+      const raw = commandArguments.getRestArgsFrom(isIncrement ? 1 : 2);
+      const delta = parseInt(seal.format(context, `{${raw}}`));
+      if (isNaN(delta)) {
+        seal.replyToSender(context, message, `解析出错: ${raw}`);
+        break;
+      }
+      const [failures, _] = seal.vars.intGet(context, variableName);
+      let newValue = isIncrement ? failures + delta : delta;
+      seal.vars.intSet(context, variableName, newValue);
+      seal.replyToSender(context, message, `当前地点现实改写失败次数: ${failures} → ${newValue}`);
+      break;
+    }
+  }
+
+  return executionResult;
+};
+
+Extension.cmdMap[CommandFs.name] = CommandFs;
 
 // Helpers
 
@@ -347,7 +420,13 @@ function getOrRegisterExtension(): seal.ExtInfo {
       ext,
       TA_CHAOS_VAR_STR,
       TA_CHAOS_VAR,
-      "表示群内混沌值的变量，需要带$g前缀。修改后不会自动迁移，需要手动 .cst"
+      "表示混沌值的变量，需要带$g前缀。修改后不会自动迁移，需要每个群手动 .cst；仅建议在和其他变量冲突时修改"
+    );
+    seal.ext.registerStringConfig(
+      ext,
+      TA_RAFAIL_VAR_STR,
+      TA_RAFAIL_VAR,
+      "表示现实改写失败次数的变量，需要带$g前缀。修改后不会自动迁移，需要每个群手动 .fst；仅建议在和其他变量冲突时修改"
     );
   }
   return ext;
