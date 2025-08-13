@@ -778,12 +778,16 @@ declare namespace seal {
     // 省略了许多不适合在 JS 环境使用的方法.
   }
 
-  /** 自定义游戏规则，目前不是很完善 */
+  /** 自定义游戏规则, 目前不是很完善. */
   export const gameSystem: {
     /**
-     * 导入JSON规则模板。
+     * 导入 JSON 规则模板. 失败会抛出异常.
      */
     newTemplate(data: string): void;
+
+    /**
+     * 导入 YAML 规则模板. 失败会抛出异常.
+     */
     newTemplateByYaml(data: string): void;
   };
 }

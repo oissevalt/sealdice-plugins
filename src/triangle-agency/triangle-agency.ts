@@ -4,7 +4,7 @@
 // @version      1.0.0
 // @timestamp    2025-08-12 20:00
 // @license      MIT
-// @description  支持三角机构（Triangle Agency）规则，包括 .ta 检定和 .cs 混沌值管理。
+// @description  支持三角机构（Triangle Agency）规则，包括 .ta 检定和 .cs 混沌值管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
 
@@ -64,8 +64,16 @@ const GAME_TEMPLATE = {
     enableTip: "已切换至4面骰，并自动开启ta扩展",
     relatedExt: ["dnd5e", "coc7", "ta"], // 不能乱，dnd 的 st 不兼容所以后导入 coc 的覆盖它
   },
-  defaults: {
-    幸运: 3,
+  default: {
+    专注: 0,
+    共情: 0,
+    仪态: 0,
+    顽固: 0,
+    双面: 0,
+    先机: 0,
+    敬业: 0,
+    外向: 0,
+    精微: 0,
   },
   alias: {
     专注: ["ATT"],
@@ -92,7 +100,7 @@ const Extension = getOrRegisterExtension();
 
 const CommandTa = seal.ext.newCmdItemInfo();
 CommandTa.name = "ta";
-CommandTa.help = ".ta <属性> --c // 添加 --c 选项则不修改群组混沌值";
+CommandTa.help = ".ta <属性/质保数量> --c // 添加 --c 选项则不修改群组混沌值";
 CommandTa.allowDelegate = true;
 CommandTa.enableExecuteTimesParse = true;
 CommandTa.solve = (context, message, commandArguments) => {
@@ -130,15 +138,15 @@ CommandTa.solve = (context, message, commandArguments) => {
     const threeCountBurned = threeCountOriginal - burnout;
     const markedIntermediate = markResults(intermediate, burnout);
     if (threeCountBurned == 3) {
-      const reply = seal.formatTmpl(context, getBigSuccessMessage(repeat > 1));
+      const reply = seal.formatTmpl(targetUser, getBigSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 0; // always stable
     } else if (threeCountBurned > 0) {
-      const reply = seal.formatTmpl(context, getSuccessMessage(repeat > 1));
+      const reply = seal.formatTmpl(targetUser, getSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 6 - threeCountOriginal + burnout;
     } else {
-      const reply = seal.formatTmpl(context, getFailureMessage(repeat > 1));
+      const reply = seal.formatTmpl(targetUser, getFailureMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 6 - threeCountOriginal + burnout;
     }
@@ -155,7 +163,7 @@ CommandTa.solve = (context, message, commandArguments) => {
     seal.vars.intSet(context, variableName, chaos + chaosGenerated);
   }
 
-  const prefix = seal.format(context, chooseRandomOption(seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR)));
+  const prefix = seal.format(targetUser, chooseRandomOption(seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR)));
   const reply = `${prefix}${results.join("\n")}\n（本次检定拥有${burnout}点燃尽，产生${chaosGenerated}点混沌，${
     attributeValue < 0 ? 0 : attributeValue
   }次质保可用）`;
@@ -200,6 +208,7 @@ CommandCs.solve = (context, message, commandArguments) => {
       let newValue = isIncrement ? chaos + delta : delta;
       seal.vars.intSet(context, variableName, newValue);
       seal.replyToSender(context, message, `当前混沌值: ${chaos} → ${newValue}`);
+      break;
     }
   }
 
