@@ -1,25 +1,32 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      1.0.0
-// @timestamp    2025-08-12 20:00
+// @version      1.0.1
+// @timestamp    2025-08-13 13:00
 // @license      MIT
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta 检定和 .cs 混沌值管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
 
+/**
+ * 更新日志
+ * 1.0.1:
+ * - 修复了代骰时用户变量的读取问题
+ * - 修复了使用自定义回复时，格式化不正确的问题
+ */
+
 // Constants
 
 const EXT_NAME = "triangle-agency";
 const EXT_AUTHOR = "败雪、檀轶步棋";
-const EXT_VERSION = "1.0.0";
+const EXT_VERSION = "1.0.1";
 
 const TA_MAX_EXECTIME_STR = "TriangleAgency:MaxExecTime";
 const TA_MAX_EXECTIME = 5;
 const TA_EXCESMSG_NAMESPACE_STR = "TriangleAgency:ExcesMsgNamespace";
 const TA_CHECKMSG_NAMESPACE_STR = "TriangleAgency:CheckMsgNamespace";
 const TA_CHECKPREFIX_STR = "TriangleAgency:CheckPrefix";
-const TA_CHECKPREFIX = "{$t玩家}的能力使用已批准……\n";
+const TA_CHECKPREFIX = "{$t玩家}的“{$t属性表达式文本}”能力使用已批准……\n";
 const TA_SUCCESS_STR = "TriangleAgency:SuccessMsg";
 const TA_BIGSUCCESS_STR = "TriangleAgency:BigSuccessMsg";
 const TA_FAILURE_STR = "TriangleAgency:FailureMsg";
@@ -109,7 +116,7 @@ CommandTa.solve = (context, message, commandArguments) => {
   const repeat = commandArguments.specialExecuteTimes || 1;
   if (repeat > seal.ext.getIntConfig(Extension, TA_MAX_EXECTIME_STR)) {
     const identifier = getExcessiveMessage();
-    seal.replyToSender(context, message, seal.formatTmpl(context, identifier));
+    seal.replyToSender(context, message, seal.format(context, identifier));
     return executionResult;
   }
 
@@ -138,15 +145,15 @@ CommandTa.solve = (context, message, commandArguments) => {
     const threeCountBurned = threeCountOriginal - burnout;
     const markedIntermediate = markResults(intermediate, burnout);
     if (threeCountBurned == 3) {
-      const reply = seal.formatTmpl(targetUser, getBigSuccessMessage(repeat > 1));
+      const reply = seal.format(targetUser, getBigSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 0; // always stable
     } else if (threeCountBurned > 0) {
-      const reply = seal.formatTmpl(targetUser, getSuccessMessage(repeat > 1));
+      const reply = seal.format(targetUser, getSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 6 - threeCountOriginal + burnout;
     } else {
-      const reply = seal.formatTmpl(targetUser, getFailureMessage(repeat > 1));
+      const reply = seal.format(targetUser, getFailureMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 6 - threeCountOriginal + burnout;
     }
@@ -163,6 +170,7 @@ CommandTa.solve = (context, message, commandArguments) => {
     seal.vars.intSet(context, variableName, chaos + chaosGenerated);
   }
 
+  seal.vars.strSet(targetUser, "$t属性表达式文本", attributeName);
   const prefix = seal.format(targetUser, chooseRandomOption(seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR)));
   const reply = `${prefix}${results.join("\n")}\n（本次检定拥有${burnout}点燃尽，产生${chaosGenerated}点混沌，${
     attributeValue < 0 ? 0 : attributeValue
@@ -252,36 +260,36 @@ function getTargetUser(context: seal.MsgContext, commandArguments: seal.CmdArgs)
   return target ? target : context;
 }
 
-function getExcessiveMessage() {
+function getExcessiveMessage(): string {
   const namespace = seal.ext.getOptionConfig(Extension, TA_EXCESMSG_NAMESPACE_STR);
   if (namespace != TA_NAMESPACE_TA) {
-    return `${namespace}:检定_轮数过多警告`;
+    return `{${namespace}:检定_轮数过多警告}`;
   }
   return seal.ext.getStringConfig(Extension, TA_CUSTOM_EXCESMSG_STR);
 }
 
-function getSuccessMessage(short: boolean) {
+function getSuccessMessage(short: boolean): string {
   const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
   if (namespace != TA_NAMESPACE_TA) {
-    return short ? `${namespace}:判定_简短_成功_普通` : `${namespace}:判定_成功_普通`;
+    return short ? `{${namespace}:判定_简短_成功_普通}` : `{${namespace}:判定_成功_普通}`;
   }
   const options = seal.ext.getTemplateConfig(Extension, short ? TA_SUCCESS_SHORT_STR : TA_SUCCESS_STR);
   return chooseRandomOption(options);
 }
 
-function getBigSuccessMessage(short: boolean) {
+function getBigSuccessMessage(short: boolean): string {
   const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
   if (namespace != TA_NAMESPACE_TA) {
-    return short ? `${namespace}:判定_简短_大成功` : `${namespace}:判定_大成功`;
+    return short ? `{${namespace}:判定_简短_大成功}` : `{${namespace}:判定_大成功}`;
   }
   const options = seal.ext.getTemplateConfig(Extension, short ? TA_BIGSUCCESS_SHORT_STR : TA_BIGSUCCESS_STR);
   return chooseRandomOption(options);
 }
 
-function getFailureMessage(short: boolean) {
+function getFailureMessage(short: boolean): string {
   const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
   if (namespace != TA_NAMESPACE_TA) {
-    return short ? `${namespace}:判定_简短_失败` : `${namespace}:判定_失败`;
+    return short ? `{${namespace}:判定_简短_失败}` : `{${namespace}:判定_失败}`;
   }
   const options = seal.ext.getTemplateConfig(Extension, short ? TA_FAILURE_SHORT_STR : TA_FAILURE_STR);
   return chooseRandomOption(options);
