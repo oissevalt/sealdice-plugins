@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      1.1.1
+// @version      1.2.0
 // @timestamp    2025-08-13 18:00
 // @license      MIT
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
@@ -10,6 +10,8 @@
 
 /**
  * 更新日志
+ * 1.2.0:
+ * - 现在 tcs 和 tfs 收到正值时为添加，收到负值时为减少
  * 1.1.1:
  * - 将 cs 和 fs 重命名为 tcs 和 tfs
  * 1.1.0:
@@ -24,7 +26,7 @@
 
 const EXT_NAME = "triangle-agency";
 const EXT_AUTHOR = "败雪、檀轶步棋";
-const EXT_VERSION = "1.1.1";
+const EXT_VERSION = "1.2.0";
 
 const TA_MAX_EXECTIME_STR = "TriangleAgency:MaxExecTime";
 const TA_MAX_EXECTIME = 5;
@@ -215,7 +217,8 @@ Extension.cmdMap["tr"] = CommandTa;
 
 const CommandCs = seal.ext.newCmdItemInfo();
 CommandCs.name = "tcs";
-CommandCs.help = ".tcs // 展示群内混沌值\n.tcs <加减值> // 增加或消除混沌\n.tcst <数值> // 设置混沌值";
+CommandCs.help =
+  ".tcs // 展示群内混沌值\n.tcs <数值> // 增加或消除混沌，注意正值为消除，负值为增加!\n.tcst <数值> // 设置混沌值";
 CommandCs.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
   commandArguments.chopPrefixToArgsWith("t");
@@ -244,7 +247,7 @@ CommandCs.solve = (context, message, commandArguments) => {
         break;
       }
       const [chaos, _] = seal.vars.intGet(context, variableName);
-      let newValue = isIncrement ? chaos + delta : delta;
+      const newValue = isIncrement ? chaos - delta : delta; // positive values lead to decrement
       seal.vars.intSet(context, variableName, newValue);
       seal.replyToSender(context, message, `当前混沌值: ${chaos} → ${newValue}`);
       break;
@@ -259,7 +262,7 @@ Extension.cmdMap[CommandCs.name] = CommandCs;
 const CommandFs = seal.ext.newCmdItemInfo();
 CommandFs.name = "tfs";
 CommandFs.help =
-  ".tfs // 展示群内现实改写失败数\n.tfs <加减值> // 增加或减少现实改写失败数\n.tfst <数值> // 设置现实改写失败数";
+  ".tfs // 展示群内现实改写失败数\n.tfs <数值> // 增加或减少现实改写失败数，注意正值为消除，负值为增加!\n.tfst <数值> // 设置现实改写失败数";
 CommandFs.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
   commandArguments.chopPrefixToArgsWith("t");
@@ -288,7 +291,7 @@ CommandFs.solve = (context, message, commandArguments) => {
         break;
       }
       const [failures, _] = seal.vars.intGet(context, variableName);
-      let newValue = isIncrement ? failures + delta : delta;
+      const newValue = isIncrement ? failures - delta : delta; // positive values lead to decrement
       seal.vars.intSet(context, variableName, newValue);
       seal.replyToSender(context, message, `当前地点现实改写失败次数: ${failures} → ${newValue}`);
       break;
