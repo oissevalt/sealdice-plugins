@@ -161,7 +161,7 @@ CommandTa.solve = (context, message, commandArguments) => {
     const threeCountOriginal = intermediate.filter((it) => it == 3).length;
     const threeCountBurned = threeCountOriginal - totalBurnout;
     const markedIntermediate = markResults(intermediate, totalBurnout);
-    if (threeCountBurned == 3) {
+    if (threeCountOriginal == 3) {
       const reply = seal.format(targetUser, getBigSuccessMessage(repeat > 1));
       results.push(`6D4=${markedIntermediate} ${reply}`);
       chaosGenerated += 0; // always stable
