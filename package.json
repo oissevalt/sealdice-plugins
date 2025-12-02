@@ -9,5 +9,8 @@
   "scripts": {
     "compile": "node scripts/compile",
     "make": "node scripts/make"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
   }
 }
