@@ -23,7 +23,7 @@ const Extension = getOrRegisterExtension();
 const ControlCommand = seal.ext.newCmdItemInfo();
 ControlCommand.name = "echoback";
 ControlCommand.help = ".echoback on/off";
-
+ControlCommand.disabledInPrivate = true;
 ControlCommand.solve = (context, message, argument) => {
     const executionResult = seal.ext.newCmdExecuteResult(true);
 
@@ -34,19 +34,28 @@ ControlCommand.solve = (context, message, argument) => {
         return executionResult;
     }
 
-    if (!GlobalState[context.group.groupId]) {
-        GlobalState[context.group.groupId] = { active: false, content: "", counter: -1 };
+    if (context.isPrivate) {
+        seal.replyToSender(context, message, seal.formatTmpl(context, "核心:提示_私聊不可用"));
+        return executionResult;
+    }
+
+    const groupId = context.group.groupId;
+
+    if (!GlobalState[groupId]) {
+        GlobalState[groupId] = { active: getExtensionActive(groupId), content: "", counter: -1 };
     }
 
     switch (action) {
         case "on":
-            GlobalState[context.group.groupId].active = true;
-            GlobalState[context.group.groupId].counter = -1;
+            GlobalState[groupId].active = true;
+            GlobalState[groupId].counter = -1;
+            setExtensionActive(groupId, true);
             seal.replyToSender(context, message, "EchoBack 已开启");
             break;
         case "off":
-            GlobalState[context.group.groupId].active = false;
-            GlobalState[context.group.groupId].counter = -1;
+            GlobalState[groupId].active = false;
+            GlobalState[groupId].counter = -1;
+            setExtensionActive(groupId, false);
             seal.replyToSender(context, message, "EchoBack 已关闭");
             break;
         default:
@@ -60,32 +69,48 @@ ControlCommand.solve = (context, message, argument) => {
 Extension.cmdMap["echoback"] = ControlCommand;
 
 Extension.onNotCommandReceived = (context, message) => {
-    if (!GlobalState[context.group.groupId]?.active) {
+    if (context.isPrivate) {
         return;
     }
 
-    if (context.isPrivate || context.group.logOn || message.sender.userId == context.endPoint.userId) {
+    const groupId = context.group.groupId;
+
+    if (!GlobalState[groupId]) {
+        GlobalState[groupId] = { active: getExtensionActive(groupId), content: "", counter: -1 };
         return;
     }
 
-    switch (GlobalState[context.group.groupId].counter) {
+    if (!GlobalState[groupId].active || context.group.logOn || message.sender.userId == context.endPoint.userId) {
+        return;
+    }
+
+    switch (GlobalState[groupId].counter) {
         case -1:
-            if (Math.random() < 0.2) {
-                GlobalState[context.group.groupId].content = message.message;
-                GlobalState[context.group.groupId].counter = Math.floor(Math.random() * 51) + 15;
-                console.log(`EchoBack: Will echo lastly received message in ${GlobalState[context.group.groupId].counter} messages.`);
+            if (Math.random() < 0.15) {
+                GlobalState[groupId].content = message.message;
+                GlobalState[groupId].counter = Math.floor(Math.random() * 26) + 15;
+                console.log(`EchoBack: Will echo lastly received message in ${GlobalState[groupId].counter} messages.`);
             }
             break;
         case 0:
-            seal.replyToSender(context, message, `${GlobalState[context.group.groupId].content}`);
-            GlobalState[context.group.groupId].counter = -1;
-            GlobalState[context.group.groupId].content = "";
+            seal.replyToSender(context, message, `${GlobalState[groupId].content}`);
+            GlobalState[groupId].counter = -1;
+            GlobalState[groupId].content = "";
             break;
         default:
-            GlobalState[context.group.groupId].counter -= 1;
+            GlobalState[groupId].counter -= 1;
             break;
     }
 }
+
+function setExtensionActive(groupId: string, active: boolean): void {
+    Extension.storageSet(groupId, JSON.stringify(active));
+}
+
+function getExtensionActive(groupId: string): boolean {
+    return JSON.parse(Extension.storageGet(groupId) || "false");
+}
+
 
 // Helpers
 
