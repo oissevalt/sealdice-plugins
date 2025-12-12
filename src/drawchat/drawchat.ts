@@ -21,6 +21,7 @@ const STORAGE_NAMESPACE = "drawchat";
 const Extension = getOrRegisterExtension();
 
 const ControlCommand = seal.ext.newCmdItemInfo();
+
 ControlCommand.name = "drawchat";
 ControlCommand.help = ".drawchat on/off/clear";
 
@@ -45,14 +46,14 @@ ControlCommand.solve = (context, message, argument) => {
             break;
         case "clear":
             clearGroupMessage(context.group.groupId);
-            seal.replyToSender(context, message, "历史记录已清除。");
+            seal.replyToSender(context, message, "历史记录已清除");
             break;
         default:
             const drawnMessage = getRandomMessage(context.group.groupId);
             if (drawnMessage) {
                 seal.replyToSender(context, message, `随机消息:\n${drawnMessage.speaker}说: ${drawnMessage.content}`);
             } else {
-                seal.replyToSender(context, message, "没有可用的消息记录。请先发送消息。");
+                seal.replyToSender(context, message, "没有可用的消息记录，请先发送消息");
             }
             break;
     }
@@ -125,10 +126,10 @@ function getRandomMessage(groupId: string): { speaker: string, content: string }
 // Helpers
 
 function getOrRegisterExtension(): seal.ExtInfo {
-  let ext = seal.ext.find(EXT_NAME);
-  if (!ext) {
-    ext = seal.ext.new(EXT_NAME, EXT_AUTHOR, EXT_VERSION);
-    seal.ext.register(ext);
-  }
-  return ext;
+    let ext = seal.ext.find(EXT_NAME);
+    if (!ext) {
+        ext = seal.ext.new(EXT_NAME, EXT_AUTHOR, EXT_VERSION);
+        seal.ext.register(ext);
+    }
+    return ext;
 }
