@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      1.2.0
-// @timestamp    2025-08-13 18:00
+// @version      2.0.0
+// @timestamp    2026-01-24 17:30:00
 // @license      MIT
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
 // @homepageURL  https://github.com/oissevalt/sealdice-plugins
@@ -10,6 +10,8 @@
 
 /**
  * 更新日志
+ * 2.0.0:
+ * - 支持了扩展规则
  * 1.2.0:
  * - 现在 tcs 和 tfs 收到正值时为添加，收到负值时为减少
  * 1.1.1:
@@ -37,15 +39,19 @@ const TA_CHECKPREFIX = "{$t玩家}的“{$t属性表达式文本}”能力使用
 const TA_SUCCESS_STR = "TriangleAgency:SuccessMsg";
 const TA_BIGSUCCESS_STR = "TriangleAgency:BigSuccessMsg";
 const TA_FAILURE_STR = "TriangleAgency:FailureMsg";
+const TA_FUMBLE_STR = "TriangleAgency:FumbleMsg";
 const TA_SUCCESS = "这一瞬间，现实为你而扭曲。";
 const TA_FAILURE = "它冰冷而不可撼动，仿若一座黑色的方尖碑。";
 const TA_BIGSUCCESS = "三尖冠——天命昭昭。";
+const TA_FUMBLE = "不过是命运的嘲弄——碎了，没了。";
 const TA_SUCCESS_SHORT_STR = "TriangleAgency:SuccessShortMsg";
 const TA_BIGSUCCESS_SHORT_STR = "TriangleAgency:BigSuccessShortMsg";
 const TA_FAILURE_SHORT_STR = "TriangleAgency:FailureShortMsg";
+const TA_FUMBLE_SHORT_STR = "TriangleAgency:FumbleShortMsg";
 const TA_SUCCESS_SHORT = "成功";
 const TA_FAILURE_SHORT = "失败";
 const TA_BIGSUCCESS_SHORT = "大成功";
+const TA_FUMBLE_SHORT = "大失败";
 const TA_NAMESPACE_COC = "COC";
 const TA_NAMESPACE_DND = "DND";
 const TA_NAMESPACE_TA = "TA";
@@ -116,7 +122,7 @@ const Extension = getOrRegisterExtension();
 
 const CommandTa = seal.ext.newCmdItemInfo();
 CommandTa.name = "ta";
-CommandTa.help = `.ta <属性/质保数量> [--c] // 技能检验，添加 --c 选项则不修改群组混沌值
+CommandTa.help = `.ta <属性/质保数量> [--c] [--g] // 技能检验，添加 --c 选项则不修改群组混沌值，--g 增加一个 D6 骰
 .tr <属性/质保数量> [--c] [--f] // 现实改写检验，--c 参数同，--f 则不占用改写失败次数`;
 CommandTa.allowDelegate = true;
 CommandTa.enableExecuteTimesParse = true;
@@ -200,12 +206,10 @@ CommandTa.solve = (context, message, commandArguments) => {
   const prefix = seal.format(targetUser, chooseRandomOption(seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR)));
   const suffix =
     commandArguments.command != "tr"
-      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${
-          attributeValue < 0 ? 0 : attributeValue
-        }次质保可用）`
-      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${
-          attributeValue < 0 ? 0 : attributeValue
-        }次质保可用）`;
+      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
+      }次质保可用）`
+      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
+      }次质保可用）`;
   const reply = `${prefix}${results.join("\n")}\n${suffix}`;
   seal.replyToSender(context, message, reply);
 
@@ -303,6 +307,72 @@ CommandFs.solve = (context, message, commandArguments) => {
 
 Extension.cmdMap[CommandFs.name] = CommandFs;
 
+const CommandTra = seal.ext.newCmdItemInfo();
+CommandTra.name = "tra";
+CommandTra.help = ".tra <修正值> [--c] // D20+修正值检定，1-10产生对应混沌点，11-20成功；3为大成功，7清除正修正值。--c 不修改混沌值";
+CommandTra.allowDelegate = true;
+CommandTra.solve = (context, message, commandArguments) => {
+  const executionResult = seal.ext.newCmdExecuteResult(true);
+
+  const modifierArg = commandArguments.getArgN(1);
+  if (!modifierArg) {
+    executionResult.showHelp = true;
+    return executionResult;
+  }
+
+  const targetUser = getTargetUser(context, commandArguments);
+  const [modifierValue, exists] = getAttribute(targetUser, modifierArg);
+  if (!exists) {
+    seal.replyToSender(context, message, `解析出错: ${modifierArg}`);
+    return executionResult;
+  }
+
+  const chaosVarName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
+  const roll = Math.floor(Math.random() * 20) + 1;
+  const total = roll + modifierValue;
+  let modifierCleared = false;
+  let chaosGenerated = 0;
+  let resultMessage = "";
+
+  if (roll == 3) {
+    resultMessage = seal.format(targetUser, getBigSuccessMessage(false));
+    chaosGenerated = 0;
+  } else if (roll == 7) {
+    resultMessage = seal.format(targetUser, getFumbleMessage(false));
+    chaosGenerated = 7;
+    if (modifierValue > 0) {
+      modifierCleared = true;
+    }
+  } else {
+    if (total >= 11) {
+      resultMessage = seal.format(targetUser, getSuccessMessage(false));
+    } else {
+      resultMessage = seal.format(targetUser, getFailureMessage(false));
+      chaosGenerated = roll;
+    }
+  }
+
+  if (commandArguments.getKwarg("c")) {
+    chaosGenerated = 0;
+  }
+
+  if (chaosGenerated != 0) {
+    const [chaos, _] = seal.vars.intGet(context, chaosVarName);
+    seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
+  }
+
+  const rollExpression = `D20+${modifierValue}=${roll}+${modifierValue}`;
+  const suffix = modifierCleared
+    ? `（产生${chaosGenerated}点混沌，正修正值已清除，请手动更新属性）`
+    : `（产生${chaosGenerated}点混沌）`;
+  const reply = `${rollExpression}=${total} ${resultMessage}\n${suffix}`;
+  seal.replyToSender(context, message, reply);
+
+  return executionResult;
+};
+
+Extension.cmdMap[CommandTra.name] = CommandTra;
+
 // Helpers
 
 function markResults(intermediate: number[], burnout: number): string {
@@ -373,6 +443,15 @@ function getFailureMessage(short: boolean): string {
   return chooseRandomOption(options);
 }
 
+function getFumbleMessage(short: boolean): string {
+  const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
+  if (namespace != TA_NAMESPACE_TA) {
+    return short ? `{${namespace}:判定_简短_大失败}` : `{${namespace}:判定_大失败}`;
+  }
+  const options = seal.ext.getTemplateConfig(Extension, short ? TA_FUMBLE_SHORT_STR : TA_FUMBLE_STR);
+  return chooseRandomOption(options);
+}
+
 function chooseRandomOption<T>(options: T[]): T {
   return options[Math.floor(Math.random() * options.length)];
 }
@@ -403,6 +482,7 @@ function getOrRegisterExtension(): seal.ExtInfo {
     seal.ext.registerTemplateConfig(ext, TA_SUCCESS_STR, [TA_SUCCESS], "使用TA检定信息时的检定信息 - 成功");
     seal.ext.registerTemplateConfig(ext, TA_FAILURE_STR, [TA_FAILURE], "使用TA检定信息时的检定信息 - 失败");
     seal.ext.registerTemplateConfig(ext, TA_BIGSUCCESS_STR, [TA_BIGSUCCESS], "使用TA检定信息时的检定信息 - 大成功");
+    seal.ext.registerTemplateConfig(ext, TA_FUMBLE_STR, [TA_FUMBLE], "使用TA检定信息时的检定信息 - 大失败");
     seal.ext.registerTemplateConfig(
       ext,
       TA_SUCCESS_SHORT_STR,
@@ -420,6 +500,12 @@ function getOrRegisterExtension(): seal.ExtInfo {
       TA_BIGSUCCESS_SHORT_STR,
       [TA_BIGSUCCESS_SHORT],
       "使用TA检定信息时的检定信息 - 大成功简短"
+    );
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_FUMBLE_SHORT_STR,
+      [TA_FUMBLE_SHORT],
+      "使用TA检定信息时的检定信息 - 大失败简短"
     );
     seal.ext.registerStringConfig(
       ext,

@@ -102,7 +102,7 @@ Extension.onNotCommandReceived = (context, message) => {
                 }
 
                 GlobalState[groupId].content = message.message;
-                GlobalState[groupId].counter = Math.floor(Math.random() * 26) + 15;
+                GlobalState[groupId].counter = Math.floor(Math.random() * 46) + 20;
 
                 console.log(`EchoBack: Will echo lastly received message in ${GlobalState[groupId].counter} messages.`);
             }
