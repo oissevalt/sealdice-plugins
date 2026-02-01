@@ -451,7 +451,7 @@ function performTACheck(
 
     let resultStr = `D10=${roll}`;
     if (d6Result !== null) {
-      resultStr += ` D6=${d6Result}`;
+      resultStr += ` + ${threesFromD6} (D6=${d6Result})`;
     }
     resultStr += `=${totalThrees}个3 ${resultMessage}`;
 
@@ -490,7 +490,8 @@ function performTACheck(
 
   let resultStr = `6D4=${markedIntermediate}`;
   if (d6Result !== null) {
-    resultStr += ` D6=${d6Result}`;
+    const addedThrees = Array(threesFromD6).fill(3);
+    resultStr += ` + [${addedThrees.join(",")}] (D6=${d6Result})`;
   }
   resultStr += ` ${resultMessage}`;
 
