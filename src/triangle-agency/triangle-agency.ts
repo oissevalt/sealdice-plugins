@@ -76,7 +76,17 @@ const GAME_TEMPLATE = {
     },
   },
   attrSettings: {
-    top: ["专注", "共情", "仪态", "顽固", "双面", "先机", "敬业", "外向", "精微"],
+    top: [
+      "专注",
+      "共情",
+      "仪态",
+      "顽固",
+      "双面",
+      "先机",
+      "敬业",
+      "外向",
+      "精微",
+    ],
     sortBy: "name",
     showAs: {},
   },
@@ -122,7 +132,7 @@ const Extension = getOrRegisterExtension();
 
 const CommandTa = seal.ext.newCmdItemInfo();
 CommandTa.name = "ta";
-CommandTa.help = `.ta <属性/质保数量> [--c] [--g] // 技能检验，添加 --c 选项则不修改群组混沌值，--g 增加一个 D6 骰
+CommandTa.help = `.ta <属性/质保数量> [--c] [--g] [--s] // 技能检验，添加 --c 选项则不修改群组混沌值，--g 增加一个 D6 骰，--s 用 D10 代替 6D4
 .tr <属性/质保数量> [--c] [--f] // 现实改写检验，--c 参数同，--f 则不占用改写失败次数`;
 CommandTa.allowDelegate = true;
 CommandTa.enableExecuteTimesParse = true;
@@ -144,7 +154,11 @@ CommandTa.solve = (context, message, commandArguments) => {
   const targetUser = getTargetUser(context, commandArguments);
   const [attributeValue, exists] = getAttribute(targetUser, attributeName);
   if (!exists) {
-    seal.replyToSender(context, message, `解析出错或属性不存在: ${attributeName}`);
+    seal.replyToSender(
+      context,
+      message,
+      `解析出错或属性不存在: ${attributeName}`,
+    );
     return executionResult;
   }
 
@@ -152,36 +166,31 @@ CommandTa.solve = (context, message, commandArguments) => {
   const chaosVarName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
 
   const abilityBurnout = attributeValue > 0 ? 0 : Math.abs(attributeValue) + 1;
-  const failureBurnout = commandArguments.command != "tr" ? 0 : seal.vars.intGet(context, failureVarName)[0];
+  const failureBurnout =
+    commandArguments.command != "tr"
+      ? 0
+      : seal.vars.intGet(context, failureVarName)[0];
   const totalBurnout = abilityBurnout + failureBurnout;
+
+  const isTaCommand = commandArguments.command == "ta";
+  const useD10 = isTaCommand && !!commandArguments.getKwarg("s");
+  const addD6 = isTaCommand && !!commandArguments.getKwarg("g");
 
   const results = [];
   let chaosGenerated = 0;
   let failuresGenerated = 0;
   for (let i = 0; i < repeat; i++) {
-    const intermediate = [];
-    for (let j = 0; j < 6; j++) {
-      const result = Math.floor(Math.random() * 4) + 1;
-      intermediate.push(result);
-    }
-    const threeCountOriginal = intermediate.filter((it) => it == 3).length;
-    const threeCountBurned = threeCountOriginal - totalBurnout;
-    const markedIntermediate = markResults(intermediate, totalBurnout);
-    if (threeCountBurned == 3) {
-      const reply = seal.format(targetUser, getBigSuccessMessage(repeat > 1));
-      results.push(`6D4=${markedIntermediate} ${reply}`);
-      chaosGenerated += 0; // always stable
-    } else if (threeCountBurned > 0) {
-      const reply = seal.format(targetUser, getSuccessMessage(repeat > 1));
-      results.push(`6D4=${markedIntermediate} ${reply}`);
-      chaosGenerated += 6 - threeCountBurned;
-    } else {
-      const reply = seal.format(targetUser, getFailureMessage(repeat > 1));
-      results.push(`6D4=${markedIntermediate} ${reply}`);
-      chaosGenerated += 6 - threeCountBurned;
-      if (commandArguments.command == "tr") {
-        failuresGenerated++;
-      }
+    const [resultStr, chaos, isFailure] = performTACheck(
+      context,
+      totalBurnout,
+      useD10,
+      addD6,
+      repeat > 1,
+    );
+    results.push(resultStr);
+    chaosGenerated += chaos;
+    if (isFailure && commandArguments.command == "tr") {
+      failuresGenerated++;
     }
   }
 
@@ -199,17 +208,28 @@ CommandTa.solve = (context, message, commandArguments) => {
   }
 
   if (failuresGenerated != 0) {
-    seal.vars.intSet(context, failureVarName, failureBurnout + failuresGenerated);
+    seal.vars.intSet(
+      context,
+      failureVarName,
+      failureBurnout + failuresGenerated,
+    );
   }
 
   seal.vars.strSet(targetUser, "$t属性表达式文本", attributeName);
-  const prefix = seal.format(targetUser, chooseRandomOption(seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR)));
+  const prefix = seal.format(
+    targetUser,
+    chooseRandomOption(
+      seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR),
+    ),
+  );
   const suffix =
     commandArguments.command != "tr"
-      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
-      }次质保可用）`
-      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
-      }次质保可用）`;
+      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${
+          attributeValue < 0 ? 0 : attributeValue
+        }次质保可用）`
+      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${
+          attributeValue < 0 ? 0 : attributeValue
+        }次质保可用）`;
   const reply = `${prefix}${results.join("\n")}\n${suffix}`;
   seal.replyToSender(context, message, reply);
 
@@ -225,10 +245,10 @@ CommandCs.help =
   ".tcs // 展示群内混沌值\n.tcs <数值> // 增加或消除混沌，注意正值为消除，负值为增加!\n.tcst <数值> // 设置混沌值";
 CommandCs.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
-  commandArguments.chopPrefixToArgsWith("t");
+  commandArguments.chopPrefixToArgsWith("t", "set");
 
   let subcommand = commandArguments.getArgN(1);
-  const isIncrement = subcommand != "t";
+  const isIncrement = subcommand != "t" && subcommand != "set";
   if (!isIncrement) {
     subcommand = commandArguments.getArgN(2);
   }
@@ -253,7 +273,11 @@ CommandCs.solve = (context, message, commandArguments) => {
       const [chaos, _] = seal.vars.intGet(context, variableName);
       const newValue = isIncrement ? chaos - delta : delta; // positive values lead to decrement
       seal.vars.intSet(context, variableName, newValue);
-      seal.replyToSender(context, message, `当前混沌值: ${chaos} → ${newValue}`);
+      seal.replyToSender(
+        context,
+        message,
+        `当前混沌值: ${chaos} → ${newValue}`,
+      );
       break;
     }
   }
@@ -269,10 +293,10 @@ CommandFs.help =
   ".tfs // 展示群内现实改写失败数\n.tfs <数值> // 增加或减少现实改写失败数，注意正值为消除，负值为增加!\n.tfst <数值> // 设置现实改写失败数";
 CommandFs.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
-  commandArguments.chopPrefixToArgsWith("t");
+  commandArguments.chopPrefixToArgsWith("t", "set");
 
   let subcommand = commandArguments.getArgN(1);
-  const isIncrement = subcommand != "t";
+  const isIncrement = subcommand != "t" && subcommand != "set";
   if (!isIncrement) {
     subcommand = commandArguments.getArgN(2);
   }
@@ -280,7 +304,11 @@ CommandFs.solve = (context, message, commandArguments) => {
   switch (subcommand) {
     case "": {
       const [failures, _] = seal.vars.intGet(context, variableName);
-      seal.replyToSender(context, message, `当前地点现实改写失败次数: ${failures}`);
+      seal.replyToSender(
+        context,
+        message,
+        `当前地点现实改写失败次数: ${failures}`,
+      );
       break;
     }
     case "help": {
@@ -297,7 +325,11 @@ CommandFs.solve = (context, message, commandArguments) => {
       const [failures, _] = seal.vars.intGet(context, variableName);
       const newValue = isIncrement ? failures - delta : delta; // positive values lead to decrement
       seal.vars.intSet(context, variableName, newValue);
-      seal.replyToSender(context, message, `当前地点现实改写失败次数: ${failures} → ${newValue}`);
+      seal.replyToSender(
+        context,
+        message,
+        `当前地点现实改写失败次数: ${failures} → ${newValue}`,
+      );
       break;
     }
   }
@@ -309,7 +341,8 @@ Extension.cmdMap[CommandFs.name] = CommandFs;
 
 const CommandTra = seal.ext.newCmdItemInfo();
 CommandTra.name = "tra";
-CommandTra.help = ".tra <修正值> [--c] // D20+修正值检定，1-10产生对应混沌点，11-20成功；3为大成功，7清除正修正值。--c 不修改混沌值";
+CommandTra.help =
+  ".tra <修正值> [--c] // D20+修正值检定，1-10产生对应混沌点，11-20成功；3为大成功，7大失败且清除正修正值。--c 不修改混沌值";
 CommandTra.allowDelegate = true;
 CommandTra.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
@@ -375,6 +408,95 @@ Extension.cmdMap[CommandTra.name] = CommandTra;
 
 // Helpers
 
+/**
+ * @returns [结果字符串, 产生的混沌值, 是否失败]
+ */
+function performTACheck(
+  ctx: seal.MsgContext,
+  totalBurnout: number,
+  useD10: boolean,
+  addD6: boolean,
+  isMulti: boolean,
+): [string, number, boolean] {
+  // 先投掷 D6（如果使用了 --g）
+  let d6Result: number | null = null;
+  let threesFromD6 = 0;
+  let chaosFromD6 = 0;
+
+  if (addD6) {
+    d6Result = Math.floor(Math.random() * 6) + 1;
+    if (d6Result == 3) {
+      threesFromD6 = 1;
+    } else if (d6Result == 6) {
+      threesFromD6 = 2;
+    } else {
+      chaosFromD6 = 1;
+    }
+  }
+
+  if (useD10) {
+    // D10 模式：D10 结果 = 3 的数量，D10=3 时失败，总是产生等于结果值的混沌
+    const roll = Math.floor(Math.random() * 10) + 1;
+    const totalThrees = roll + threesFromD6;
+    const isFailure = roll == 3;
+    const chaosGenerated = totalThrees + chaosFromD6;
+
+    let resultMessage: string;
+    // --s 模式下永远不会大成功
+    if (!isFailure) {
+      resultMessage = seal.format(ctx, getSuccessMessage(isMulti));
+    } else {
+      resultMessage = seal.format(ctx, getFailureMessage(isMulti));
+    }
+
+    let resultStr = `D10=${roll}`;
+    if (d6Result !== null) {
+      resultStr += ` D6=${d6Result}`;
+    }
+    resultStr += `=${totalThrees}个3 ${resultMessage}`;
+
+    return [resultStr, chaosGenerated, isFailure];
+  }
+
+  // 标准 6D4 模式
+  const intermediate: number[] = [];
+  for (let j = 0; j < 6; j++) {
+    const result = Math.floor(Math.random() * 4) + 1;
+    intermediate.push(result);
+  }
+
+  const threeCountOriginal =
+    intermediate.filter((it) => it == 3).length + threesFromD6;
+  const threeCountBurned = threeCountOriginal - totalBurnout;
+  const markedIntermediate = markResults(intermediate, totalBurnout);
+
+  let resultMessage: string;
+  let chaosGenerated: number;
+  let isFailure: boolean;
+
+  if (threeCountBurned == 3) {
+    resultMessage = seal.format(ctx, getBigSuccessMessage(isMulti));
+    chaosGenerated = chaosFromD6;
+    isFailure = false;
+  } else if (threeCountBurned > 0) {
+    resultMessage = seal.format(ctx, getSuccessMessage(isMulti));
+    chaosGenerated = 6 - threeCountBurned + chaosFromD6;
+    isFailure = false;
+  } else {
+    resultMessage = seal.format(ctx, getFailureMessage(isMulti));
+    chaosGenerated = 6 - threeCountBurned + chaosFromD6;
+    isFailure = true;
+  }
+
+  let resultStr = `6D4=${markedIntermediate}`;
+  if (d6Result !== null) {
+    resultStr += ` D6=${d6Result}`;
+  }
+  resultStr += ` ${resultMessage}`;
+
+  return [resultStr, chaosGenerated, isFailure];
+}
+
 function markResults(intermediate: number[], burnout: number): string {
   const result = [];
   for (const n of intermediate) {
@@ -395,7 +517,10 @@ function markResults(intermediate: number[], burnout: number): string {
   return `[${result.join(",")}] ${"x".repeat(burnout)}`;
 }
 
-function getAttribute(context: seal.MsgContext, attribute: string): [number, boolean] {
+function getAttribute(
+  context: seal.MsgContext,
+  attribute: string,
+): [number, boolean] {
   const formatted = parseInt(seal.format(context, `{${attribute}}`));
   if (isNaN(formatted)) {
     return [0, false];
@@ -403,13 +528,19 @@ function getAttribute(context: seal.MsgContext, attribute: string): [number, boo
   return [formatted, true];
 }
 
-function getTargetUser(context: seal.MsgContext, commandArguments: seal.CmdArgs): seal.MsgContext {
+function getTargetUser(
+  context: seal.MsgContext,
+  commandArguments: seal.CmdArgs,
+): seal.MsgContext {
   const target = seal.getCtxProxyFirst(context, commandArguments);
   return target ? target : context;
 }
 
 function getExcessiveMessage(): string {
-  const namespace = seal.ext.getOptionConfig(Extension, TA_EXCESMSG_NAMESPACE_STR);
+  const namespace = seal.ext.getOptionConfig(
+    Extension,
+    TA_EXCESMSG_NAMESPACE_STR,
+  );
   if (namespace != TA_NAMESPACE_TA) {
     return `{${namespace}:检定_轮数过多警告}`;
   }
@@ -417,38 +548,68 @@ function getExcessiveMessage(): string {
 }
 
 function getSuccessMessage(short: boolean): string {
-  const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
+  const namespace = seal.ext.getOptionConfig(
+    Extension,
+    TA_CHECKMSG_NAMESPACE_STR,
+  );
   if (namespace != TA_NAMESPACE_TA) {
-    return short ? `{${namespace}:判定_简短_成功_普通}` : `{${namespace}:判定_成功_普通}`;
+    return short
+      ? `{${namespace}:判定_简短_成功_普通}`
+      : `{${namespace}:判定_成功_普通}`;
   }
-  const options = seal.ext.getTemplateConfig(Extension, short ? TA_SUCCESS_SHORT_STR : TA_SUCCESS_STR);
+  const options = seal.ext.getTemplateConfig(
+    Extension,
+    short ? TA_SUCCESS_SHORT_STR : TA_SUCCESS_STR,
+  );
   return chooseRandomOption(options);
 }
 
 function getBigSuccessMessage(short: boolean): string {
-  const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
+  const namespace = seal.ext.getOptionConfig(
+    Extension,
+    TA_CHECKMSG_NAMESPACE_STR,
+  );
   if (namespace != TA_NAMESPACE_TA) {
-    return short ? `{${namespace}:判定_简短_大成功}` : `{${namespace}:判定_大成功}`;
+    return short
+      ? `{${namespace}:判定_简短_大成功}`
+      : `{${namespace}:判定_大成功}`;
   }
-  const options = seal.ext.getTemplateConfig(Extension, short ? TA_BIGSUCCESS_SHORT_STR : TA_BIGSUCCESS_STR);
+  const options = seal.ext.getTemplateConfig(
+    Extension,
+    short ? TA_BIGSUCCESS_SHORT_STR : TA_BIGSUCCESS_STR,
+  );
   return chooseRandomOption(options);
 }
 
 function getFailureMessage(short: boolean): string {
-  const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
+  const namespace = seal.ext.getOptionConfig(
+    Extension,
+    TA_CHECKMSG_NAMESPACE_STR,
+  );
   if (namespace != TA_NAMESPACE_TA) {
     return short ? `{${namespace}:判定_简短_失败}` : `{${namespace}:判定_失败}`;
   }
-  const options = seal.ext.getTemplateConfig(Extension, short ? TA_FAILURE_SHORT_STR : TA_FAILURE_STR);
+  const options = seal.ext.getTemplateConfig(
+    Extension,
+    short ? TA_FAILURE_SHORT_STR : TA_FAILURE_STR,
+  );
   return chooseRandomOption(options);
 }
 
 function getFumbleMessage(short: boolean): string {
-  const namespace = seal.ext.getOptionConfig(Extension, TA_CHECKMSG_NAMESPACE_STR);
+  const namespace = seal.ext.getOptionConfig(
+    Extension,
+    TA_CHECKMSG_NAMESPACE_STR,
+  );
   if (namespace != TA_NAMESPACE_TA) {
-    return short ? `{${namespace}:判定_简短_大失败}` : `{${namespace}:判定_大失败}`;
+    return short
+      ? `{${namespace}:判定_简短_大失败}`
+      : `{${namespace}:判定_大失败}`;
   }
-  const options = seal.ext.getTemplateConfig(Extension, short ? TA_FUMBLE_SHORT_STR : TA_FUMBLE_STR);
+  const options = seal.ext.getTemplateConfig(
+    Extension,
+    short ? TA_FUMBLE_SHORT_STR : TA_FUMBLE_STR,
+  );
   return chooseRandomOption(options);
 }
 
@@ -461,63 +622,103 @@ function getOrRegisterExtension(): seal.ExtInfo {
   if (!ext) {
     ext = seal.ext.new(EXT_NAME, EXT_AUTHOR, EXT_VERSION);
     seal.ext.register(ext);
-    seal.ext.registerIntConfig(ext, TA_MAX_EXECTIME_STR, TA_MAX_EXECTIME, "多次检定上限值");
+    seal.ext.registerIntConfig(
+      ext,
+      TA_MAX_EXECTIME_STR,
+      TA_MAX_EXECTIME,
+      "多次检定上限值",
+    );
     seal.ext.registerOptionConfig(
       ext,
       TA_EXCESMSG_NAMESPACE_STR,
       TA_NAMESPACE_COC,
       [TA_NAMESPACE_COC, TA_NAMESPACE_DND, TA_NAMESPACE_TA],
-      "多轮检定轮数过多时，使用哪个规则系统的警告信息（COC=克苏鲁的呼唤，DND=龙与地下城，TA=三角机构）"
+      "多轮检定轮数过多时，使用哪个规则系统的警告信息（COC=克苏鲁的呼唤，DND=龙与地下城，TA=三角机构）",
     );
-    seal.ext.registerStringConfig(ext, TA_CUSTOM_EXCESMSG_STR, TA_CUSTOM_EXCESMSG, "使用TA轮数过多警告时，展示的信息");
-    seal.ext.registerTemplateConfig(ext, TA_SUCCESS_STR, [TA_SUCCESS], "使用TA检定信息时的检定信息 - 成功");
+    seal.ext.registerStringConfig(
+      ext,
+      TA_CUSTOM_EXCESMSG_STR,
+      TA_CUSTOM_EXCESMSG,
+      "使用TA轮数过多警告时，展示的信息",
+    );
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_SUCCESS_STR,
+      [TA_SUCCESS],
+      "使用TA检定信息时的检定信息 - 成功",
+    );
     seal.ext.registerOptionConfig(
       ext,
       TA_CHECKMSG_NAMESPACE_STR,
       TA_NAMESPACE_COC,
       [TA_NAMESPACE_COC, TA_NAMESPACE_TA],
-      "检定时，使用哪个系统的成功/失败信息（COC=克苏鲁的呼唤，TA=三角机构）"
+      "检定时，使用哪个系统的成功/失败信息（COC=克苏鲁的呼唤，TA=三角机构）",
     );
-    seal.ext.registerTemplateConfig(ext, TA_CHECKPREFIX_STR, [TA_CHECKPREFIX], "技能检定的回复前缀");
-    seal.ext.registerTemplateConfig(ext, TA_SUCCESS_STR, [TA_SUCCESS], "使用TA检定信息时的检定信息 - 成功");
-    seal.ext.registerTemplateConfig(ext, TA_FAILURE_STR, [TA_FAILURE], "使用TA检定信息时的检定信息 - 失败");
-    seal.ext.registerTemplateConfig(ext, TA_BIGSUCCESS_STR, [TA_BIGSUCCESS], "使用TA检定信息时的检定信息 - 大成功");
-    seal.ext.registerTemplateConfig(ext, TA_FUMBLE_STR, [TA_FUMBLE], "使用TA检定信息时的检定信息 - 大失败");
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_CHECKPREFIX_STR,
+      [TA_CHECKPREFIX],
+      "技能检定的回复前缀",
+    );
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_SUCCESS_STR,
+      [TA_SUCCESS],
+      "使用TA检定信息时的检定信息 - 成功",
+    );
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_FAILURE_STR,
+      [TA_FAILURE],
+      "使用TA检定信息时的检定信息 - 失败",
+    );
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_BIGSUCCESS_STR,
+      [TA_BIGSUCCESS],
+      "使用TA检定信息时的检定信息 - 大成功",
+    );
+    seal.ext.registerTemplateConfig(
+      ext,
+      TA_FUMBLE_STR,
+      [TA_FUMBLE],
+      "使用TA检定信息时的检定信息 - 大失败",
+    );
     seal.ext.registerTemplateConfig(
       ext,
       TA_SUCCESS_SHORT_STR,
       [TA_SUCCESS_SHORT],
-      "使用TA检定信息时的检定信息 - 成功简短"
+      "使用TA检定信息时的检定信息 - 成功简短",
     );
     seal.ext.registerTemplateConfig(
       ext,
       TA_FAILURE_SHORT_STR,
       [TA_FAILURE_SHORT],
-      "使用TA检定信息时的检定信息 - 失败简短"
+      "使用TA检定信息时的检定信息 - 失败简短",
     );
     seal.ext.registerTemplateConfig(
       ext,
       TA_BIGSUCCESS_SHORT_STR,
       [TA_BIGSUCCESS_SHORT],
-      "使用TA检定信息时的检定信息 - 大成功简短"
+      "使用TA检定信息时的检定信息 - 大成功简短",
     );
     seal.ext.registerTemplateConfig(
       ext,
       TA_FUMBLE_SHORT_STR,
       [TA_FUMBLE_SHORT],
-      "使用TA检定信息时的检定信息 - 大失败简短"
+      "使用TA检定信息时的检定信息 - 大失败简短",
     );
     seal.ext.registerStringConfig(
       ext,
       TA_CHAOS_VAR_STR,
       TA_CHAOS_VAR,
-      "表示混沌值的变量，需要带$g前缀。修改后不会自动迁移，需要每个群手动 .cst；仅建议在和其他变量冲突时修改"
+      "表示混沌值的变量，需要带$g前缀。修改后不会自动迁移，需要每个群手动 .cst；仅建议在和其他变量冲突时修改",
     );
     seal.ext.registerStringConfig(
       ext,
       TA_RAFAIL_VAR_STR,
       TA_RAFAIL_VAR,
-      "表示现实改写失败次数的变量，需要带$g前缀。修改后不会自动迁移，需要每个群手动 .fst；仅建议在和其他变量冲突时修改"
+      "表示现实改写失败次数的变量，需要带$g前缀。修改后不会自动迁移，需要每个群手动 .fst；仅建议在和其他变量冲突时修改",
     );
   }
   return ext;
