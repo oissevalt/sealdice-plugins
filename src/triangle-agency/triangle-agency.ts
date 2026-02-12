@@ -2,7 +2,7 @@
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
 // @version      2.0.0
-// @timestamp    2026-01-24 17:30:00
+// @timestamp    2026-02-01 19:45:00
 // @license      MIT
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
 // @homepageURL  https://github.com/oissevalt/sealdice-plugins
@@ -28,7 +28,7 @@
 
 const EXT_NAME = "triangle-agency";
 const EXT_AUTHOR = "败雪、檀轶步棋";
-const EXT_VERSION = "1.2.0";
+const EXT_VERSION = "2.0.0";
 
 const TA_MAX_EXECTIME_STR = "TriangleAgency:MaxExecTime";
 const TA_MAX_EXECTIME = 5;
@@ -224,12 +224,10 @@ CommandTa.solve = (context, message, commandArguments) => {
   );
   const suffix =
     commandArguments.command != "tr"
-      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${
-          attributeValue < 0 ? 0 : attributeValue
-        }次质保可用）`
-      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${
-          attributeValue < 0 ? 0 : attributeValue
-        }次质保可用）`;
+      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
+      }次质保可用）`
+      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
+      }次质保可用）`;
   const reply = `${prefix}${results.join("\n")}\n${suffix}`;
   seal.replyToSender(context, message, reply);
 
@@ -394,11 +392,18 @@ CommandTra.solve = (context, message, commandArguments) => {
     seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
   }
 
+  const prefix = seal.format(
+    targetUser,
+    chooseRandomOption(
+      seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR),
+    ),
+  );
+
   const rollExpression = `D20+${modifierValue}=${roll}+${modifierValue}`;
   const suffix = modifierCleared
     ? `（产生${chaosGenerated}点混沌，正修正值已清除，请手动更新属性）`
     : `（产生${chaosGenerated}点混沌）`;
-  const reply = `${rollExpression}=${total} ${resultMessage}\n${suffix}`;
+  const reply = `${prefix}${rollExpression}=${total} ${resultMessage}\n${suffix}`;
   seal.replyToSender(context, message, reply);
 
   return executionResult;
