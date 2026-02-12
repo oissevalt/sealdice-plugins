@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      2.0.0
-// @timestamp    2026-02-01 19:45:00
+// @version      2.0.1
+// @timestamp    2026-02-12 15:45:00
 // @license      MIT
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
 // @homepageURL  https://github.com/oissevalt/sealdice-plugins
@@ -10,6 +10,8 @@
 
 /**
  * 更新日志
+ * 2.0.1:
+ * - 修复一个显示 bug
  * 2.0.0:
  * - 支持了扩展规则
  * 1.2.0:
@@ -392,6 +394,7 @@ CommandTra.solve = (context, message, commandArguments) => {
     seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
   }
 
+  seal.vars.strSet(targetUser, "$t属性表达式文本", modifierArg);
   const prefix = seal.format(
     targetUser,
     chooseRandomOption(
