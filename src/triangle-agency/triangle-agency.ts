@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      2.1.0
-// @timestamp    2026-04-03 13:20:00
+// @version      2.1.1
+// @timestamp    2026-04-03 15:30:00
 // @license      MIT
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
 // @homepageURL  https://github.com/oissevalt/sealdice-plugins
@@ -10,6 +10,8 @@
 
 /**
  * 更新日志
+ * 2.1.1:
+ * - 修复 set 失效的问题
  * 2.1.0:
  * - 修复燃尽会阻止三重升华的问题
  * - 优化结果标记
@@ -33,7 +35,7 @@
 
 const EXT_NAME = "triangle-agency";
 const EXT_AUTHOR = "败雪、檀轶步棋";
-const EXT_VERSION = "2.1.0";
+const EXT_VERSION = "2.1.1";
 
 const TA_MAX_EXECTIME_STR = "TriangleAgency:MaxExecTime";
 const TA_MAX_EXECTIME = 5;
@@ -73,7 +75,6 @@ const GAME_TEMPLATE = {
   authors: ["檀轶步棋"],
   version: "0.2.0",
   updatedTime: "20260403",
-  templateVer: "2.0",
   nameTemplate: {
     ta: {
       template: "{$t玩家_RAW}",
@@ -101,7 +102,7 @@ const GAME_TEMPLATE = {
     enableTip: "已切换至4面骰，并自动开启ta扩展",
     relatedExt: ["dnd5e", "coc7", "ta"], // 不能乱，dnd 的 st 不兼容所以后导入 coc 的覆盖它
   },
-  default: {
+  defaults: {
     专注: 0,
     共情: 0,
     气场: 0,
@@ -129,6 +130,7 @@ const GAME_TEMPLATE = {
 
 try {
   seal.gameSystem.newTemplate(JSON.stringify(GAME_TEMPLATE));
+  console.log(`TA 规则装载完毕`);
 } catch (e) {
   console.error(`无法装载 TA 规则: ${e}`);
 }
