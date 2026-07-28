@@ -1,15 +1,20 @@
 // ==UserScript==
 // @name         三角机构游戏规则
 // @author       败雪、檀轶步棋
-// @version      2.1.1
-// @timestamp    2026-04-03 15:30:00
+// @version      3.0.1
+// @timestamp    2026-07-29 00:00:00
 // @license      MIT
-// @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。本插件将属性值视为可用的质保数量，属性0时有1燃尽，-1时2燃尽，以此类推。
+// @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。
 // @homepageURL  https://github.com/oissevalt/sealdice-plugins
 // ==/UserScript==
 
 /**
  * 更新日志
+ * 3.0.1:
+ * - 按常用名重命名资质
+ * 3.0.0:
+ * - 完全重写检定逻辑
+ * - 支持附加检定选项和特殊技能检定
  * 2.1.1:
  * - 修复 set 失效的问题
  * 2.1.0:
@@ -35,7 +40,7 @@
 
 const EXT_NAME = "triangle-agency";
 const EXT_AUTHOR = "败雪、檀轶步棋";
-const EXT_VERSION = "2.1.1";
+const EXT_VERSION = "3.0.1";
 
 const TA_MAX_EXECTIME_STR = "TriangleAgency:MaxExecTime";
 const TA_MAX_EXECTIME = 5;
@@ -73,8 +78,8 @@ const GAME_TEMPLATE = {
   name: "ta",
   fullName: "三角机构规则",
   authors: ["檀轶步棋"],
-  version: "0.2.0",
-  updatedTime: "20260403",
+  version: "0.2.1",
+  updatedTime: "20260802",
   nameTemplate: {
     ta: {
       template: "{$t玩家_RAW}",
@@ -89,8 +94,8 @@ const GAME_TEMPLATE = {
       "坚毅",
       "欺瞒",
       "主动",
-      "敬业",
-      "外向",
+      "专业",
+      "活力",
       "诡秘",
     ],
     sortBy: "name",
@@ -109,8 +114,8 @@ const GAME_TEMPLATE = {
     坚毅: 0,
     欺瞒: 0,
     主动: 0,
-    敬业: 0,
-    外向: 0,
+    专业: 0,
+    活力: 0,
     诡秘: 0,
   },
   alias: {
@@ -137,15 +142,17 @@ try {
 
 const Extension = getOrRegisterExtension();
 
+// Command declarations
+
 const CommandTa = seal.ext.newCmdItemInfo();
 CommandTa.name = "ta";
-CommandTa.help = `.ta <属性/质保数量> [--c] [--g] [--s] // 技能检验，添加 --c 选项则不修改群组混沌值，--g 增加一个 D6 骰，--s 用 D10 代替 6D4
-.tr <属性/质保数量> [--c] [--f] // 现实改写检验，--c 参数同，--f 则不占用改写失败次数`;
+CommandTa.help = `.ta <能力/质保数量> [--c] [--g] [--s] // 技能检定。--c 不修改群组混沌值，--g 使用 D10，--s 使用 D6
+.tr <能力/质保数量> [--c] [--f] [--g] // 现实改写检定。--c 参数同，--f 不记录改写失败，--g 使用 D8
+插件按未使用质保的情况结算；如需使用质保，请根据结果手动调整`;
 CommandTa.allowDelegate = true;
 CommandTa.enableExecuteTimesParse = true;
 CommandTa.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
-
   const repeat = commandArguments.specialExecuteTimes || 1;
   if (repeat > seal.ext.getIntConfig(Extension, TA_MAX_EXECTIME_STR)) {
     const identifier = getExcessiveMessage();
@@ -153,90 +160,124 @@ CommandTa.solve = (context, message, commandArguments) => {
     return executionResult;
   }
 
-  const attributeName = commandArguments.getArgN(1);
-  if (!attributeName) {
+  const abilityName = commandArguments.getArgN(1);
+  if (!abilityName || abilityName == "help") {
     executionResult.showHelp = true;
     return executionResult;
   }
+
   const targetUser = getTargetUser(context, commandArguments);
-  const [attributeValue, exists] = getAttribute(targetUser, attributeName);
+  const [abilityValue, exists] = getAbilityValue(targetUser, abilityName);
   if (!exists) {
     seal.replyToSender(
       context,
       message,
-      `解析出错或属性不存在: ${attributeName}`,
+      `解析出错或能力不存在: ${abilityName}`,
     );
     return executionResult;
   }
 
-  const failureVarName = seal.ext.getStringConfig(Extension, TA_RAFAIL_VAR_STR);
+  const isRealityAlteration = commandArguments.command == "tr";
+  const useOptionalDie = !!commandArguments.getKwarg("g");
+  const useD10 = !isRealityAlteration && !!commandArguments.getKwarg("s");
+  const useSponsorDie = isRealityAlteration && useOptionalDie;
+  const useD6 = !isRealityAlteration && useOptionalDie;
+  const skipChaosWrite = !!commandArguments.getKwarg("c");
+  const skipFailureWrite =
+    isRealityAlteration && !!commandArguments.getKwarg("f");
+
+  const warrantyAvailable = Math.max(0, abilityValue);
+  const abilityBurnout = abilityValue > 0 ? 0 : Math.abs(abilityValue) + 1;
   const chaosVarName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
+  const failureVarName = seal.ext.getStringConfig(Extension, TA_RAFAIL_VAR_STR);
+  const startingFailureBurnout = isRealityAlteration
+    ? seal.vars.intGet(context, failureVarName)[0]
+    : 0;
 
-  const abilityBurnout = attributeValue > 0 ? 0 : Math.abs(attributeValue) + 1;
-  const failureBurnout =
-    commandArguments.command != "tr"
-      ? 0
-      : seal.vars.intGet(context, failureVarName)[0];
-  const totalBurnout = abilityBurnout + failureBurnout;
-
-  const isTaCommand = commandArguments.command == "ta";
-  const useD10 = isTaCommand && !!commandArguments.getKwarg("s");
-  const addD6 = isTaCommand && !!commandArguments.getKwarg("g");
-
-  const results = [];
-  let chaosGenerated = 0;
-  let failuresGenerated = 0;
-  for (let i = 0; i < repeat; i++) {
-    const [resultStr, chaos, isFailure] = performTACheck(
-      context,
-      totalBurnout,
-      useD10,
-      addD6,
-      repeat > 1,
-    );
-    results.push(resultStr);
-    chaosGenerated += chaos;
-    if (isFailure && commandArguments.command == "tr") {
-      failuresGenerated++;
-    }
-  }
-
-  if (commandArguments.getKwarg("c")) {
-    chaosGenerated = 0;
-  }
-
-  if (commandArguments.getKwarg("f")) {
-    failuresGenerated = 0;
-  }
-
-  if (chaosGenerated != 0) {
-    const [chaos, _] = seal.vars.intGet(context, chaosVarName);
-    seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
-  }
-
-  if (failuresGenerated != 0) {
-    seal.vars.intSet(
-      context,
-      failureVarName,
-      failureBurnout + failuresGenerated,
-    );
-  }
-
-  seal.vars.strSet(targetUser, "$t属性表达式文本", attributeName);
+  seal.vars.strSet(targetUser, "$t属性表达式文本", abilityName);
   const prefix = seal.format(
     targetUser,
     chooseRandomOption(
       seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR),
     ),
   );
-  const suffix =
-    commandArguments.command != "tr"
-      ? `（本次检定拥有${totalBurnout}点燃尽，产生${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
-      }次质保可用）`
-      : `（本次现实改写拥有${totalBurnout}点燃尽，其中${failureBurnout}点来自前置失败；产生${failuresGenerated}次改写失败和${chaosGenerated}点混沌，${attributeValue < 0 ? 0 : attributeValue
-      }次质保可用）`;
-  const reply = `${prefix}${results.join("\n")}\n${suffix}`;
-  seal.replyToSender(context, message, reply);
+
+  // G3 has a choice after the dice are known. Both branches are therefore
+  // informational, and neither chaos nor rewrite failures are persisted.
+  if (useSponsorDie) {
+    const results: string[] = [];
+    for (let i = 0; i < repeat; i++) {
+      const totalBurnout = abilityBurnout + startingFailureBurnout;
+      results.push(
+        performSponsorCheck(targetUser, totalBurnout, warrantyAvailable),
+      );
+    }
+    seal.replyToSender(context, message, `${prefix}${results.join("\n\n")}`);
+    return executionResult;
+  }
+
+  const results: string[] = [];
+  let chaosGenerated = 0;
+  let failuresGenerated = 0;
+  let currentFailureBurnout = startingFailureBurnout;
+  for (let i = 0; i < repeat; i++) {
+    const totalBurnout =
+      abilityBurnout + (isRealityAlteration ? currentFailureBurnout : 0);
+    const check = useD10
+      ? performD10Check(
+          targetUser,
+          totalBurnout,
+          warrantyAvailable,
+          useD6,
+          repeat > 1,
+        )
+      : performStandardCheck(
+          targetUser,
+          totalBurnout,
+          warrantyAvailable,
+          useD6,
+          repeat > 1,
+        );
+
+    const lines = [check.text];
+    chaosGenerated += check.outcome.chaos;
+    if (isRealityAlteration && isFailure(check.outcome)) {
+      failuresGenerated++;
+      if (!skipFailureWrite) {
+        currentFailureBurnout++;
+        lines.push("本次现实改写失败，增加 1 次改写失败");
+      } else {
+        lines.push("本次现实改写失败，未记录改写失败次数");
+      }
+    }
+    results.push(lines.join("\n"));
+  }
+
+  if (!skipChaosWrite && chaosGenerated != 0) {
+    const chaos = seal.vars.intGet(context, chaosVarName)[0];
+    seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
+  }
+  if (
+    isRealityAlteration &&
+    !skipFailureWrite &&
+    currentFailureBurnout != startingFailureBurnout
+  ) {
+    seal.vars.intSet(context, failureVarName, currentFailureBurnout);
+  }
+
+  const notes: string[] = [];
+  if (skipChaosWrite && chaosGenerated != 0) {
+    notes.push(`以上 ${chaosGenerated} 点混沌未写入群变量`);
+  }
+  if (skipFailureWrite && failuresGenerated != 0) {
+    notes.push(`以上 ${failuresGenerated} 次改写失败未写入群变量`);
+  }
+  const noteText = notes.length > 0 ? `\n（${notes.join("；")}）` : "";
+  seal.replyToSender(
+    context,
+    message,
+    `${prefix}${results.join("\n\n")}${noteText}`,
+  );
 
   return executionResult;
 };
@@ -249,45 +290,13 @@ CommandCs.name = "tcs";
 CommandCs.help =
   ".tcs // 展示群内混沌值\n.tcs <数值> // 增加或消除混沌，注意正值为消除，负值为增加!\n.tcst <数值> // 设置混沌值";
 CommandCs.solve = (context, message, commandArguments) => {
-  const executionResult = seal.ext.newCmdExecuteResult(true);
-  commandArguments.chopPrefixToArgsWith("t", "set");
-
-  let subcommand = commandArguments.getArgN(1);
-  const isIncrement = subcommand != "t" && subcommand != "set";
-  if (!isIncrement) {
-    subcommand = commandArguments.getArgN(2);
-  }
-  const variableName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
-  switch (subcommand) {
-    case "": {
-      const [chaos, _] = seal.vars.intGet(context, variableName);
-      seal.replyToSender(context, message, `当前群内混沌指数: ${chaos}`);
-      break;
-    }
-    case "help": {
-      executionResult.showHelp = true;
-      break;
-    }
-    default: {
-      const raw = commandArguments.getRestArgsFrom(isIncrement ? 1 : 2);
-      const delta = parseInt(seal.format(context, `{${raw}}`));
-      if (isNaN(delta)) {
-        seal.replyToSender(context, message, `解析出错: ${raw}`);
-        break;
-      }
-      const [chaos, _] = seal.vars.intGet(context, variableName);
-      const newValue = isIncrement ? chaos - delta : delta; // positive values lead to decrement
-      seal.vars.intSet(context, variableName, newValue);
-      seal.replyToSender(
-        context,
-        message,
-        `当前混沌值: ${chaos} → ${newValue}`,
-      );
-      break;
-    }
-  }
-
-  return executionResult;
+  return solveCounterCommand(
+    context,
+    message,
+    commandArguments,
+    seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR),
+    "当前群内混沌值",
+  );
 };
 
 Extension.cmdMap[CommandCs.name] = CommandCs;
@@ -297,49 +306,13 @@ CommandFs.name = "tfs";
 CommandFs.help =
   ".tfs // 展示群内现实改写失败数\n.tfs <数值> // 增加或减少现实改写失败数，注意正值为消除，负值为增加!\n.tfst <数值> // 设置现实改写失败数";
 CommandFs.solve = (context, message, commandArguments) => {
-  const executionResult = seal.ext.newCmdExecuteResult(true);
-  commandArguments.chopPrefixToArgsWith("t", "set");
-
-  let subcommand = commandArguments.getArgN(1);
-  const isIncrement = subcommand != "t" && subcommand != "set";
-  if (!isIncrement) {
-    subcommand = commandArguments.getArgN(2);
-  }
-  const variableName = seal.ext.getStringConfig(Extension, TA_RAFAIL_VAR_STR);
-  switch (subcommand) {
-    case "": {
-      const [failures, _] = seal.vars.intGet(context, variableName);
-      seal.replyToSender(
-        context,
-        message,
-        `当前地点现实改写失败次数: ${failures}`,
-      );
-      break;
-    }
-    case "help": {
-      executionResult.showHelp = true;
-      break;
-    }
-    default: {
-      const raw = commandArguments.getRestArgsFrom(isIncrement ? 1 : 2);
-      const delta = parseInt(seal.format(context, `{${raw}}`));
-      if (isNaN(delta)) {
-        seal.replyToSender(context, message, `解析出错: ${raw}`);
-        break;
-      }
-      const [failures, _] = seal.vars.intGet(context, variableName);
-      const newValue = isIncrement ? failures - delta : delta; // positive values lead to decrement
-      seal.vars.intSet(context, variableName, newValue);
-      seal.replyToSender(
-        context,
-        message,
-        `当前地点现实改写失败次数: ${failures} → ${newValue}`,
-      );
-      break;
-    }
-  }
-
-  return executionResult;
+  return solveCounterCommand(
+    context,
+    message,
+    commandArguments,
+    seal.ext.getStringConfig(Extension, TA_RAFAIL_VAR_STR),
+    "当前地点现实改写失败次数",
+  );
 };
 
 Extension.cmdMap[CommandFs.name] = CommandFs;
@@ -347,203 +320,337 @@ Extension.cmdMap[CommandFs.name] = CommandFs;
 const CommandTra = seal.ext.newCmdItemInfo();
 CommandTra.name = "tra";
 CommandTra.help =
-  ".tra <修正值> [--c] // D20+修正值检定，1-10产生对应混沌点，11-20成功；3为大成功，7大失败且清除正修正值。--c 不修改混沌值";
+  ".tra <能力/质保数量> [--c] // 使用 D20 的特殊技能检定。--c 不修改群组混沌值";
 CommandTra.allowDelegate = true;
 CommandTra.solve = (context, message, commandArguments) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
-
-  const modifierArg = commandArguments.getArgN(1);
-  if (!modifierArg) {
+  const abilityName = commandArguments.getArgN(1);
+  if (!abilityName || abilityName == "help") {
     executionResult.showHelp = true;
     return executionResult;
   }
 
   const targetUser = getTargetUser(context, commandArguments);
-  const [modifierValue, exists] = getAttribute(targetUser, modifierArg);
+  const [abilityValue, exists] = getAbilityValue(targetUser, abilityName);
   if (!exists) {
-    seal.replyToSender(context, message, `解析出错: ${modifierArg}`);
+    seal.replyToSender(
+      context,
+      message,
+      `解析出错或能力不存在: ${abilityName}`,
+    );
     return executionResult;
   }
 
-  const chaosVarName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
-  const roll = Math.floor(Math.random() * 20) + 1;
-  const total = roll + modifierValue;
-  let modifierCleared = false;
+  const warranty = Math.max(0, abilityValue);
+  const roll = rollDie(20);
+  const total = roll + warranty;
+  let kind: OutcomeKind;
   let chaosGenerated = 0;
-  let resultMessage = "";
-
-  if (roll == 3) {
-    resultMessage = seal.format(targetUser, getBigSuccessMessage(false));
-    chaosGenerated = 0;
-  } else if (roll == 7) {
-    resultMessage = seal.format(targetUser, getFumbleMessage(false));
+  if (total == 3) {
+    kind = "bigSuccess";
+  } else if (total == 7) {
+    kind = "fumble";
     chaosGenerated = 7;
-    if (modifierValue > 0) {
-      modifierCleared = true;
-    }
+  } else if (total > 10) {
+    kind = "success";
   } else {
-    if (total >= 11) {
-      resultMessage = seal.format(targetUser, getSuccessMessage(false));
-    } else {
-      resultMessage = seal.format(targetUser, getFailureMessage(false));
-      chaosGenerated = roll;
-    }
+    kind = "failure";
+    chaosGenerated = total;
   }
 
-  if (commandArguments.getKwarg("c")) {
-    chaosGenerated = 0;
-  }
-
-  if (chaosGenerated != 0) {
-    const [chaos, _] = seal.vars.intGet(context, chaosVarName);
+  const chaosVarName = seal.ext.getStringConfig(Extension, TA_CHAOS_VAR_STR);
+  const skipChaosWrite = !!commandArguments.getKwarg("c");
+  if (!skipChaosWrite && chaosGenerated != 0) {
+    const chaos = seal.vars.intGet(context, chaosVarName)[0];
     seal.vars.intSet(context, chaosVarName, chaos + chaosGenerated);
   }
 
-  seal.vars.strSet(targetUser, "$t属性表达式文本", modifierArg);
+  seal.vars.strSet(targetUser, "$t属性表达式文本", abilityName);
   const prefix = seal.format(
     targetUser,
     chooseRandomOption(
       seal.ext.getTemplateConfig(Extension, TA_CHECKPREFIX_STR),
     ),
   );
-
-  const rollExpression = `D20+${modifierValue}=${roll}+${modifierValue}`;
-  const suffix = modifierCleared
-    ? `（产生${chaosGenerated}点混沌，正修正值已清除，请手动更新属性）`
-    : `（产生${chaosGenerated}点混沌）`;
-  const reply = `${prefix}${rollExpression}=${total} ${resultMessage}\n${suffix}`;
-  seal.replyToSender(context, message, reply);
+  const lines = [
+    `D20=${roll} + ${warranty}=${total}`,
+    formatOutcome(targetUser, kind, false),
+  ];
+  if (chaosGenerated != 0) {
+    lines.push(`产生 ${chaosGenerated} 点混沌`);
+  }
+  lines.push("请手动支付发动所需的 1 点质保");
+  if (kind == "fumble") {
+    lines.push("请手动清空所选能力剩余的所有质保");
+  }
+  if (skipChaosWrite && chaosGenerated != 0) {
+    lines.push("以上混沌未写入群变量");
+  }
+  seal.replyToSender(context, message, `${prefix}${lines.join("\n")}`);
 
   return executionResult;
 };
 
 Extension.cmdMap[CommandTra.name] = CommandTra;
 
-// Helpers
+// Check logic
 
-/**
- * @returns [结果字符串, 产生的混沌值, 是否失败]
- */
-function performTACheck(
-  ctx: seal.MsgContext,
-  totalBurnout: number,
-  useD10: boolean,
-  addD6: boolean,
-  isMulti: boolean,
-): [string, number, boolean] {
-  // 先投掷 D6（如果使用了 --g）
-  let d6Result: number | null = null;
-  let threesFromD6 = 0;
-  let chaosFromD6 = 0;
+type OutcomeKind =
+  | "success"
+  | "stableSuccess"
+  | "bigSuccess"
+  | "failure"
+  | "fumble";
 
-  if (addD6) {
-    d6Result = Math.floor(Math.random() * 6) + 1;
-    if (d6Result == 3) {
-      threesFromD6 = 1;
-    } else if (d6Result == 6) {
-      threesFromD6 = 2;
-    } else {
-      chaosFromD6 = 1;
-    }
-  }
-
-  if (useD10) {
-    // D10 模式：D10 结果 = 3 的数量，D10=3 时失败，总是产生等于结果值的混沌
-    const roll = Math.floor(Math.random() * 10) + 1;
-    const totalThrees = roll + threesFromD6;
-    const isFailure = roll == 3;
-    const chaosGenerated = totalThrees + chaosFromD6;
-
-    let resultMessage: string;
-    // --s 模式下永远不会大成功
-    if (!isFailure) {
-      resultMessage = seal.format(ctx, getSuccessMessage(isMulti));
-    } else {
-      resultMessage = seal.format(ctx, getFailureMessage(isMulti));
-    }
-
-    let resultStr = `D10=${roll}`;
-    if (d6Result !== null) {
-      resultStr += ` + ${threesFromD6} (D6=${d6Result})`;
-    }
-    resultStr += `=${totalThrees}个3 ${resultMessage}`;
-
-    return [resultStr, chaosGenerated, isFailure];
-  }
-
-  // 标准 6D4 模式
-  const intermediate: number[] = [];
-  for (let j = 0; j < 6; j++) {
-    const result = Math.floor(Math.random() * 4) + 1;
-    intermediate.push(result);
-  }
-
-  const threeCountOriginal =
-    intermediate.filter((it) => it == 3).length + threesFromD6;
-  const threeCountBurned = threeCountOriginal - totalBurnout;
-
-  let resultMessage: string;
-  let chaosGenerated: number;
-  let isFailure: boolean;
-
-  const isBigSuccess = threeCountOriginal == 3;
-
-  if (isBigSuccess) {
-    resultMessage = seal.format(ctx, getBigSuccessMessage(isMulti));
-    chaosGenerated = chaosFromD6;
-    isFailure = false;
-  } else if (threeCountBurned > 0) {
-    resultMessage = seal.format(ctx, getSuccessMessage(isMulti));
-    chaosGenerated = 6 - threeCountBurned + chaosFromD6;
-    isFailure = false;
-  } else {
-    resultMessage = seal.format(ctx, getFailureMessage(isMulti));
-    chaosGenerated = 6 - threeCountBurned + chaosFromD6;
-    isFailure = true;
-  }
-
-  const resultStr = markResults(intermediate, d6Result, isBigSuccess ? 0 : totalBurnout) + ` ${resultMessage}`;
-
-  return [resultStr, chaosGenerated, isFailure];
+interface CheckOutcome {
+  kind: OutcomeKind;
+  chaos: number;
+  originalThrees: number;
+  finalThrees: number;
+  burnoutConsumed: number;
+  excessBurnout: number;
 }
 
-function markResults(intermediate: number[], d6Result: number | null, burnout: number): string {
-  const result = [];
-  for (const n of intermediate) {
-    if (n == 3) {
-      if (burnout > 0) {
-        result.push("3x");
-        burnout--;
-      } else {
-        result.push("3");
-      }
-    } else {
-      result.push(`${n}x`);
-    }
-  }
-  let str = `6D4=[${result.join(",")}]`;
-  if (d6Result !== null) {
-    const threesFromD6 = d6Result == 3 ? 1 : d6Result == 6 ? 2 : 0;
-    const d6ThreesBurned = Math.min(threesFromD6, burnout);
-    const d6ThreesRemaining = threesFromD6 - d6ThreesBurned;
-    const addedThrees = [
-      ...Array(d6ThreesBurned).fill("3x"),
-      ...Array(d6ThreesRemaining).fill(3),
-    ];
-    str += ` + [${addedThrees.join(",")}] (D6=${d6Result})`;
-  }
-  if (burnout > 0) {
-    str += ` ${"x".repeat(burnout)}`;
-  }
-  return str;
+interface CheckResult {
+  text: string;
+  outcome: CheckOutcome;
 }
 
-function getAttribute(
+function performStandardCheck(
   context: seal.MsgContext,
-  attribute: string,
+  burnout: number,
+  warrantyAvailable: number,
+  addD6: boolean,
+  short: boolean,
+): CheckResult {
+  const d4Results = rollDice(6, 4);
+  const d6Result = addD6 ? rollDie(6) : null;
+  const extraThrees = d6Result == 3 ? 1 : d6Result == 6 ? 2 : 0;
+  const extraChaos =
+    d6Result !== null && d6Result != 3 && d6Result != 6 ? 1 : 0;
+  const outcome = resolveStandardCheck(
+    d4Results,
+    extraThrees,
+    extraChaos,
+    burnout,
+  );
+
+  const diceText =
+    `6D4=[${d4Results.join(",")}]` +
+    (d6Result === null ? "" : ` + D6=${d6Result}`);
+  return {
+    outcome,
+    text: formatCheckDetails(
+      context,
+      diceText,
+      outcome,
+      warrantyAvailable,
+      short,
+    ),
+  };
+}
+
+function resolveStandardCheck(
+  d4Results: number[],
+  extraThrees: number,
+  extraChaos: number,
+  burnout: number,
+): CheckOutcome {
+  const d4Threes = countThrees(d4Results);
+  const originalThrees = d4Threes + extraThrees;
+
+  // An unadjusted set of exactly three 3s ignores burnout and all chaos.
+  if (originalThrees == 3) {
+    return {
+      kind: "bigSuccess",
+      chaos: 0,
+      originalThrees,
+      finalThrees: originalThrees,
+      burnoutConsumed: 0,
+      excessBurnout: 0,
+    };
+  }
+
+  const excessBurnout = Math.max(0, burnout - originalThrees);
+  const burnoutConsumed =
+    burnout >= 0 ? Math.min(burnout, originalThrees) : burnout;
+  const finalThrees = originalThrees - burnout;
+  let chaos = 6 - d4Threes + extraChaos + excessBurnout;
+  let kind: OutcomeKind;
+
+  if (finalThrees == 3) {
+    kind = "stableSuccess";
+    chaos = 0;
+  } else {
+    kind = finalThrees > 0 ? "success" : "failure";
+  }
+
+  return {
+    kind,
+    chaos,
+    originalThrees,
+    finalThrees,
+    burnoutConsumed,
+    excessBurnout,
+  };
+}
+
+function performD10Check(
+  context: seal.MsgContext,
+  burnout: number,
+  warrantyAvailable: number,
+  addD6: boolean,
+  short: boolean,
+): CheckResult {
+  const d10Result = rollDie(10);
+  const d6Result = addD6 ? rollDie(6) : null;
+  const extraThrees = d6Result == 3 ? 1 : d6Result == 6 ? 2 : 0;
+  const extraChaos =
+    d6Result !== null && d6Result != 3 && d6Result != 6 ? 1 : 0;
+  const originalThrees = d10Result + extraThrees;
+  const excessBurnout = Math.max(0, burnout - originalThrees);
+  const burnoutConsumed =
+    burnout >= 0 ? Math.min(burnout, originalThrees) : burnout;
+  const finalThrees = originalThrees - burnout;
+  const kind: OutcomeKind =
+    d10Result == 3 || (burnout > 0 && finalThrees == 3) ? "failure" : "success";
+  const outcome: CheckOutcome = {
+    kind,
+    chaos: d10Result + extraChaos + excessBurnout,
+    originalThrees,
+    finalThrees,
+    burnoutConsumed,
+    excessBurnout,
+  };
+  const diceText =
+    `D10=${d10Result}` + (d6Result === null ? "" : ` + D6=${d6Result}`);
+
+  return {
+    outcome,
+    text: formatCheckDetails(
+      context,
+      diceText,
+      outcome,
+      warrantyAvailable,
+      short,
+    ),
+  };
+}
+
+function performSponsorCheck(
+  context: seal.MsgContext,
+  burnout: number,
+  warrantyAvailable: number,
+): string {
+  const d4Results = rollDice(6, 4);
+  const d8Result = rollDie(8);
+  const d4Threes = countThrees(d4Results);
+  const sponsoredThrees = d8Result == 3 ? 1 : d8Result == 6 ? 2 : 0;
+  const withoutSponsor = resolveStandardCheck(d4Results, 0, 0, burnout);
+  const withSponsor =
+    sponsoredThrees > 0
+      ? resolveStandardCheck(d4Results, sponsoredThrees, 0, burnout)
+      : null;
+
+  const lines = [
+    `6D4=[${d4Results.join(",")}] + D8=${d8Result}`,
+    `原始产生 ${d4Threes} 个 3，赞助骰提供 ${sponsoredThrees} 个 3`,
+    "",
+  ];
+  if (withSponsor !== null) {
+    lines.push(
+      `采用 ${sponsoredThrees} 个 3 的结果：${formatOutcome(
+        context,
+        withSponsor.kind,
+        true,
+      )}，产生 ${withSponsor.chaos} 点混沌`,
+    );
+  }
+  lines.push(
+    `不采用的结果：${formatOutcome(
+      context,
+      withoutSponsor.kind,
+      true,
+    )}，产生 ${withoutSponsor.chaos} 点混沌`,
+  );
+  if (warrantyAvailable > 0) {
+    lines.push(`有 ${warrantyAvailable} 点质保可用`);
+  }
+  let manualNotice = "以上混沌值为可能结果，请采用后手动添加";
+  if (
+    isFailure(withoutSponsor) ||
+    (withSponsor !== null && isFailure(withSponsor))
+  ) {
+    manualNotice += "。若采用的结果失败，请同时手动添加 1 次改写失败";
+  }
+  lines.push(manualNotice);
+  return lines.join("\n");
+}
+
+function formatCheckDetails(
+  context: seal.MsgContext,
+  diceText: string,
+  outcome: CheckOutcome,
+  warrantyAvailable: number,
+  short: boolean,
+): string {
+  const chaosAndWarranty =
+    warrantyAvailable > 0
+      ? `产生 ${outcome.chaos} 点混沌，有 ${warrantyAvailable} 点质保可用`
+      : `产生 ${outcome.chaos} 点混沌`;
+  const lines = [
+    diceText,
+    `原始产生 ${outcome.originalThrees} 个 3，燃尽消耗 ${outcome.burnoutConsumed} 个`,
+    formatOutcome(context, outcome.kind, short),
+    chaosAndWarranty,
+  ];
+  return lines.join("\n");
+}
+
+function formatOutcome(
+  context: seal.MsgContext,
+  kind: OutcomeKind,
+  short: boolean,
+): string {
+  switch (kind) {
+    case "bigSuccess":
+      return seal.format(context, getBigSuccessMessage(short));
+    case "stableSuccess":
+      return `稳定性——${seal.format(context, getSuccessMessage(short))}`;
+    case "success":
+      return seal.format(context, getSuccessMessage(short));
+    case "fumble":
+      return seal.format(context, getFumbleMessage(short));
+    case "failure":
+      return seal.format(context, getFailureMessage(short));
+  }
+}
+
+function isFailure(outcome: CheckOutcome | null): boolean {
+  return outcome?.kind == "failure" || outcome?.kind == "fumble";
+}
+
+function countThrees(results: number[]): number {
+  return results.filter((result) => result == 3).length;
+}
+
+function rollDice(count: number, sides: number): number[] {
+  return Array.from({ length: count }, () => rollDie(sides));
+}
+
+function rollDie(sides: number): number {
+  return Math.floor(Math.random() * sides) + 1;
+}
+
+function getAbilityValue(
+  context: seal.MsgContext,
+  ability: string,
 ): [number, boolean] {
-  const formatted = parseInt(seal.format(context, `{${attribute}}`));
-  if (isNaN(formatted)) {
+  if (/^[+-]?\d+$/.test(ability)) {
+    return [Number.parseInt(ability, 10), true];
+  }
+  const formatted = Number.parseInt(seal.format(context, `{${ability}}`), 10);
+  if (Number.isNaN(formatted)) {
     return [0, false];
   }
   return [formatted, true];
@@ -553,9 +660,52 @@ function getTargetUser(
   context: seal.MsgContext,
   commandArguments: seal.CmdArgs,
 ): seal.MsgContext {
-  const target = seal.getCtxProxyFirst(context, commandArguments);
-  return target ? target : context;
+  return seal.getCtxProxyFirst(context, commandArguments) || context;
 }
+
+function solveCounterCommand(
+  context: seal.MsgContext,
+  message: seal.Message,
+  commandArguments: seal.CmdArgs,
+  variableName: string,
+  label: string,
+): seal.CmdExecuteResult {
+  const executionResult = seal.ext.newCmdExecuteResult(true);
+  commandArguments.chopPrefixToArgsWith("t", "set");
+
+  let subcommand = commandArguments.getArgN(1);
+  const isAdjustment = subcommand != "t" && subcommand != "set";
+  if (!isAdjustment) {
+    subcommand = commandArguments.getArgN(2);
+  }
+
+  if (!subcommand) {
+    const value = seal.vars.intGet(context, variableName)[0];
+    seal.replyToSender(context, message, `${label}: ${value}`);
+    return executionResult;
+  }
+  if (subcommand == "help") {
+    executionResult.showHelp = true;
+    return executionResult;
+  }
+
+  const raw = commandArguments.getRestArgsFrom(isAdjustment ? 1 : 2);
+  const delta = Number.parseInt(seal.format(context, `{${raw}}`), 10);
+  if (Number.isNaN(delta)) {
+    seal.replyToSender(context, message, `解析出错: ${raw}`);
+    return executionResult;
+  }
+
+  const oldValue = seal.vars.intGet(context, variableName)[0];
+  // Positive adjustment values remove points; negative values add them.
+  // Deliberately do not clamp rewrite failures: negative burnout is supported.
+  const newValue = isAdjustment ? oldValue - delta : delta;
+  seal.vars.intSet(context, variableName, newValue);
+  seal.replyToSender(context, message, `${label}: ${oldValue} → ${newValue}`);
+  return executionResult;
+}
+
+// Config and message helpers
 
 function getExcessiveMessage(): string {
   const namespace = seal.ext.getOptionConfig(
@@ -661,12 +811,6 @@ function getOrRegisterExtension(): seal.ExtInfo {
       TA_CUSTOM_EXCESMSG_STR,
       TA_CUSTOM_EXCESMSG,
       "使用TA轮数过多警告时，展示的信息",
-    );
-    seal.ext.registerTemplateConfig(
-      ext,
-      TA_SUCCESS_STR,
-      [TA_SUCCESS],
-      "使用TA检定信息时的检定信息 - 成功",
     );
     seal.ext.registerOptionConfig(
       ext,
