@@ -4,7 +4,7 @@
 // @version      1.0.1
 // @description  发起并统计投票。
 // @timestamp    2025-07-20 23:00
-// @license      MIT
+// @license      GNU GPLv3
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
 
@@ -43,20 +43,37 @@ commandVote.solve = (context, message, argument) => {
   switch (subcommand) {
     case "new": {
       if (VoteMap.has(context.group.groupId)) {
-        seal.replyToSender(context, message, "当前群组有正在进行的投票，请先 .vote end 结束");
+        seal.replyToSender(
+          context,
+          message,
+          "当前群组有正在进行的投票，请先 .vote end 结束",
+        );
         break;
       }
       const voteName = argument.getArgN(2);
       const voteMode = argument.getArgN(3).toLowerCase();
       if (!voteName || !voteMode || !["s", "m"].includes(voteMode)) {
-        seal.replyToSender(context, message, "参数错误，请用 .vote help 查看用法");
+        seal.replyToSender(
+          context,
+          message,
+          "参数错误，请用 .vote help 查看用法",
+        );
         break;
       }
       const voteDurationMinutes = parseInt(argument.getArgN(4));
-      const isDurationValid = !isNaN(voteDurationMinutes) && voteDurationMinutes > 0;
-      const choices = (isDurationValid ? argument.getRestArgsFrom(5) : argument.getRestArgsFrom(4)).split(" ");
+      const isDurationValid =
+        !isNaN(voteDurationMinutes) && voteDurationMinutes > 0;
+      const choices = (
+        isDurationValid
+          ? argument.getRestArgsFrom(5)
+          : argument.getRestArgsFrom(4)
+      ).split(" ");
       if (choices.length <= 1) {
-        seal.replyToSender(context, message, "选项数量不够，至少要两个以上，中间用空格分开");
+        seal.replyToSender(
+          context,
+          message,
+          "选项数量不够，至少要两个以上，中间用空格分开",
+        );
         break;
       }
       const vote = {
@@ -71,20 +88,29 @@ commandVote.solve = (context, message, argument) => {
         message,
         `投票已创建，${vote.mode == "s" ? "单选" : "多选"}，共${vote.choices.length}项，持续时间${
           isDurationValid ? voteDurationMinutes : "infinite"
-        }分钟`
+        }分钟`,
       );
       if (!isDurationValid) {
         break;
       }
-      setTimeout(() => {
-        const vote2 = VoteMap.get(context.group.groupId);
-        if (vote2) {
-          const sort = sortResponses(vote2);
-          const list = sort.map(([choice, count]) => `${choice}: ${count}`).join("\n");
-          seal.replyToSender(context, message, `投票《${vote2.name}》已经结束，统计结果如下:\n${list}`);
-          VoteMap.delete(context.group.groupId);
-        }
-      }, voteDurationMinutes * 60 * 1000);
+      setTimeout(
+        () => {
+          const vote2 = VoteMap.get(context.group.groupId);
+          if (vote2) {
+            const sort = sortResponses(vote2);
+            const list = sort
+              .map(([choice, count]) => `${choice}: ${count}`)
+              .join("\n");
+            seal.replyToSender(
+              context,
+              message,
+              `投票《${vote2.name}》已经结束，统计结果如下:\n${list}`,
+            );
+            VoteMap.delete(context.group.groupId);
+          }
+        },
+        voteDurationMinutes * 60 * 1000,
+      );
       break;
     }
     case "end": {
@@ -94,8 +120,14 @@ commandVote.solve = (context, message, argument) => {
         break;
       }
       const sort = sortResponses(vote);
-      const list = sort.map(([choice, count]) => `${choice}: ${count}`).join("\n");
-      seal.replyToSender(context, message, `投票《${vote.name}》已经结束，统计结果如下:\n${list}`);
+      const list = sort
+        .map(([choice, count]) => `${choice}: ${count}`)
+        .join("\n");
+      seal.replyToSender(
+        context,
+        message,
+        `投票《${vote.name}》已经结束，统计结果如下:\n${list}`,
+      );
       VoteMap.delete(context.group.groupId);
       break;
     }
@@ -105,17 +137,29 @@ commandVote.solve = (context, message, argument) => {
         seal.replyToSender(context, message, "当前群组没有进行的投票");
         break;
       }
-      const choices = vote.choices.map((choice, index) => `${index + 1}. ${choice}`).join("\n");
-      seal.replyToSender(context, message, `当前群组投票(${vote.mode == "s" ? "单选" : "多选"})：\n${choices}`);
+      const choices = vote.choices
+        .map((choice, index) => `${index + 1}. ${choice}`)
+        .join("\n");
+      seal.replyToSender(
+        context,
+        message,
+        `当前群组投票(${vote.mode == "s" ? "单选" : "多选"})：\n${choices}`,
+      );
       if (Object.keys(vote.responses).length > 0) {
         const sort = sortResponses(vote);
-        const list = sort.map(([choice, count]) => `${choice}: ${count}`).join("\n");
+        const list = sort
+          .map(([choice, count]) => `${choice}: ${count}`)
+          .join("\n");
         seal.replyToSender(context, message, `目前票数统计结果:\n${list}`);
       }
       break;
     }
     case "version": {
-      seal.replyToSender(context, message, `投票插件 by ${EXT_AUTHOR}, ver ${EXT_VER}`);
+      seal.replyToSender(
+        context,
+        message,
+        `投票插件 by ${EXT_AUTHOR}, ver ${EXT_VER}`,
+      );
       break;
     }
     case "help": {
@@ -137,7 +181,11 @@ commandVote.solve = (context, message, argument) => {
       for (const choice of choices) {
         const c = parseInt(choice);
         if (!c || c < 1 || c > vote.choices.length) {
-          seal.replyToSender(context, message, `参数'${choice}'不是一个有效的序号，请重选`);
+          seal.replyToSender(
+            context,
+            message,
+            `参数'${choice}'不是一个有效的序号，请重选`,
+          );
           return executionResult;
         }
         chosenIndices.push(c - 1);
@@ -147,7 +195,11 @@ commandVote.solve = (context, message, argument) => {
         break;
       }
       if (vote.responses[context.player.userId] && vote.mode == "s") {
-        seal.replyToSender(context, message, "当前投票仅支持单选且你已经投过票");
+        seal.replyToSender(
+          context,
+          message,
+          "当前投票仅支持单选且你已经投过票",
+        );
         break;
       }
       if (!areChoicesUnique(chosenIndices)) {
@@ -157,8 +209,16 @@ commandVote.solve = (context, message, argument) => {
       if (!vote.responses[context.player.userId]) {
         vote.responses[context.player.userId] = [];
       }
-      if (chosenIndices.some((c) => vote.responses[context.player.userId].includes(c))) {
-        seal.replyToSender(context, message, "你已经投给了其中一些选项，本次投票无效");
+      if (
+        chosenIndices.some((c) =>
+          vote.responses[context.player.userId].includes(c),
+        )
+      ) {
+        seal.replyToSender(
+          context,
+          message,
+          "你已经投给了其中一些选项，本次投票无效",
+        );
         break;
       }
       const choiceContents = [];
@@ -166,7 +226,11 @@ commandVote.solve = (context, message, argument) => {
         vote.responses[context.player.userId].push(index);
         choiceContents.push(vote.choices[index]);
       }
-      seal.replyToSender(context, message, `投票已记录，你投给了${choiceContents.join("、")}`);
+      seal.replyToSender(
+        context,
+        message,
+        `投票已记录，你投给了${choiceContents.join("、")}`,
+      );
       break;
     }
   }

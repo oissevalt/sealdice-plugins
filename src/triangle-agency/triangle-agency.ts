@@ -3,7 +3,7 @@
 // @author       败雪、檀轶步棋
 // @version      3.0.1
 // @timestamp    2026-07-29 00:00:00
-// @license      MIT
+// @license      GNU GPLv3
 // @description  支持三角机构（Triangle Agency）规则，包括 .ta/tr 检定、.tcs 混沌值管理和 .tfs 现实改写失败管理。
 // @homepageURL  https://github.com/oissevalt/sealdice-plugins
 // ==/UserScript==

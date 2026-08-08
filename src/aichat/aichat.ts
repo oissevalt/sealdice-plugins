@@ -3,7 +3,7 @@
 // @author       檀轶步棋
 // @version      1.1.0
 // @timestamp    2025-12-12 20:45:00
-// @license      MIT
+// @license      GNU GPLv3
 // @description  基于 OpenAI ChatCompletion 的简单 AI 对话功能。
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==

@@ -3,7 +3,7 @@
 // @author       檀轶步棋
 // @version      1.1.1
 // @timestamp    2025-07-16 17:00
-// @license      MIT
+// @license      GNU GPLv3
 // @description  指令有：上架、下架、购买、出售、丢弃、展示
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
@@ -43,7 +43,8 @@ const ErrnoMap = [
 
 const commandSupply = seal.ext.newCmdItemInfo();
 commandSupply.name = "supply";
-commandSupply.help = ".上架 <名称> <单价(正整数)> <数量(大于0，默认为1)> //向商店添加商品，仅限骰主使用";
+commandSupply.help =
+  ".上架 <名称> <单价(正整数)> <数量(大于0，默认为1)> //向商店添加商品，仅限骰主使用";
 commandSupply.solve = (context, message, argument) => {
   if (argument.getArgN(1) == "help") {
     const ret = seal.ext.newCmdExecuteResult(true);
@@ -51,26 +52,39 @@ commandSupply.solve = (context, message, argument) => {
     return ret;
   }
   if (context.privilegeLevel < 100) {
-    seal.replyToSender(context, message, seal.formatTmpl(context, "核心:提示_无权限"));
+    seal.replyToSender(
+      context,
+      message,
+      seal.formatTmpl(context, "核心:提示_无权限"),
+    );
     return seal.ext.newCmdExecuteResult(true);
   }
   const name = argument.getArgN(1);
   const price = parseInt(argument.getArgN(2));
   const quantity = parseInt(argument.getArgN(3)) || 1;
   if (!name || isNaN(price) || price < 0 || !quantity || quantity <= 0) {
-    seal.replyToSender(context, message, `参数错误。用法：${commandSupply.help}`);
+    seal.replyToSender(
+      context,
+      message,
+      `参数错误。用法：${commandSupply.help}`,
+    );
     return seal.ext.newCmdExecuteResult(true);
   }
   const shop = new Shop();
   shop.saveAfter(() => shop.addItem({ name, price, quantity }));
-  seal.replyToSender(context, message, `已向商店添${quantity}个${name}，单价为${price}`);
+  seal.replyToSender(
+    context,
+    message,
+    `已向商店添${quantity}个${name}，单价为${price}`,
+  );
   return seal.ext.newCmdExecuteResult(true);
 };
 Extension.cmdMap["上架"] = commandSupply;
 
 const commandDelist = seal.ext.newCmdItemInfo();
 commandDelist.name = "delist";
-commandDelist.help = ".下架 <名称> <数量(大于0，默认为1)> //从商店中下架物品，仅限骰主使用";
+commandDelist.help =
+  ".下架 <名称> <数量(大于0，默认为1)> //从商店中下架物品，仅限骰主使用";
 commandDelist.solve = (ctx, msg, args) => {
   if (args.getArgN(1) === "help") {
     const ret = seal.ext.newCmdExecuteResult(true);
@@ -99,7 +113,8 @@ Extension.cmdMap["下架"] = commandDelist;
 
 const commandSell = seal.ext.newCmdItemInfo();
 commandSell.name = "sell";
-commandSell.help = ".出售 <名称> <数量(大于0，默认为1)> //从背包中出售商品到商店";
+commandSell.help =
+  ".出售 <名称> <数量(大于0，默认为1)> //从背包中出售商品到商店";
 commandSell.solve = (ctx, msg, args) => {
   if (args.getArgN(1) === "help") {
     const ret = seal.ext.newCmdExecuteResult(true);
@@ -109,7 +124,11 @@ commandSell.solve = (ctx, msg, args) => {
   const name = args.getArgN(1);
   const quantity = parseInt(args.getArgN(2)) || 1;
   if (!name || !quantity || quantity <= 0) {
-    seal.replyToSender(ctx, msg, "参数错误。用法：.出售 <名称> <数量(大于0，默认为1)>");
+    seal.replyToSender(
+      ctx,
+      msg,
+      "参数错误。用法：.出售 <名称> <数量(大于0，默认为1)>",
+    );
     return seal.ext.newCmdExecuteResult(true);
   }
   const shop = new Shop();
@@ -118,7 +137,11 @@ commandSell.solve = (ctx, msg, args) => {
   if (errno != 0) {
     seal.replyToSender(ctx, msg, `无法出售: ${ErrnoMap[errno]}`);
   } else {
-    seal.replyToSender(ctx, msg, `以${price}的价格出售成功，用户余额${backpack.getMoney()}`);
+    seal.replyToSender(
+      ctx,
+      msg,
+      `以${price}的价格出售成功，用户余额${backpack.getMoney()}`,
+    );
   }
   return seal.ext.newCmdExecuteResult(true);
 };
@@ -144,7 +167,11 @@ commandBuy.solve = (ctx, msg, args) => {
   if (errno != 0) {
     seal.replyToSender(ctx, msg, `交易时发生错误：${ErrnoMap[errno]}`);
   } else {
-    seal.replyToSender(ctx, msg, `购买成功！\n${name}x${quantity}已经放入你的背包。\n账户余额: ${backpack.getMoney()}`);
+    seal.replyToSender(
+      ctx,
+      msg,
+      `购买成功！\n${name}x${quantity}已经放入你的背包。\n账户余额: ${backpack.getMoney()}`,
+    );
   }
   return seal.ext.newCmdExecuteResult(true);
 };
@@ -152,7 +179,8 @@ Extension.cmdMap["购买"] = commandBuy;
 
 const commandDiscard = seal.ext.newCmdItemInfo();
 commandDiscard.name = "discard";
-commandDiscard.help = ".丢弃 <名称> <数量(大于0，默认为全部)> //从背包中丢弃物品，谨慎使用";
+commandDiscard.help =
+  ".丢弃 <名称> <数量(大于0，默认为全部)> //从背包中丢弃物品，谨慎使用";
 commandDiscard.solve = (ctx, msg, args) => {
   if (args.getArgN(1) === "help") {
     const ret = seal.ext.newCmdExecuteResult(true);
@@ -186,12 +214,20 @@ commandShow.solve = (ctx, msg, args) => {
   }
   const name = args.getArgN(1) || "背包";
   if (name !== "背包" && name !== "商店") {
-    seal.replyToSender(ctx, msg, "参数错误。用法：.展示 商店/背包(不填默认为背包)");
+    seal.replyToSender(
+      ctx,
+      msg,
+      "参数错误。用法：.展示 商店/背包(不填默认为背包)",
+    );
     return seal.ext.newCmdExecuteResult(true);
   } else if (name === "背包") {
     const backpack = new Backpack(ctx);
     let items = backpack.listItems();
-    seal.replyToSender(ctx, msg, `${msg.sender.nickname}的背包（余额 ${backpack.getMoney()}）:\n${items}`);
+    seal.replyToSender(
+      ctx,
+      msg,
+      `${msg.sender.nickname}的背包（余额 ${backpack.getMoney()}）:\n${items}`,
+    );
   } else {
     let shop = new Shop();
     let goods = shop.listGoods();
@@ -262,7 +298,9 @@ class Shop {
       return "空空如也";
     }
     let arr: string[] = [];
-    this.goods.forEach((i) => arr.push(`${i.name}  数量${i.quantity}  单价${i.price}`));
+    this.goods.forEach((i) =>
+      arr.push(`${i.name}  数量${i.quantity}  单价${i.price}`),
+    );
     return arr.join("\n");
   }
 
@@ -351,7 +389,11 @@ class Backpack {
     return 0;
   }
 
-  sell(shop: Shop, name: string, quantity: number = 1): { errno: number; price: number } {
+  sell(
+    shop: Shop,
+    name: string,
+    quantity: number = 1,
+  ): { errno: number; price: number } {
     const itemInBackpack = this.getItem(name);
     if (!itemInBackpack) {
       return { errno: ERR_USER_NOITM, price: 0 };

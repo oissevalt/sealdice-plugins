@@ -3,7 +3,7 @@
 // @author       檀轶步棋
 // @version      1.0.0
 // @timestamp    2025-12-02 02:15:00
-// @license      MIT
+// @license      GNU GPLv3
 // @description  Echos a random message after a random delay.
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==

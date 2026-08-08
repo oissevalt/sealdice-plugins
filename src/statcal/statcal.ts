@@ -3,7 +3,7 @@
 // @author       檀轶步棋
 // @version      1.0.0
 // @timestamp    2025-10-19 19:00
-// @license      MIT
+// @license      GNU GPLv3
 // @description  对数据进行简单统计学分析
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
@@ -19,7 +19,8 @@ const Extension = getOrRegisterExtension();
 const Command = seal.ext.newCmdItemInfo();
 
 Command.name = "统计";
-Command.help = ".统计 1,2,3... // 统计样本的均值，方差等，样本之间英文逗号隔开不要加空格";
+Command.help =
+  ".统计 1,2,3... // 统计样本的均值，方差等，样本之间英文逗号隔开不要加空格";
 
 Command.solve = (context, message, commandArguments) => {
   const commandExecutionResult = seal.ext.newCmdExecuteResult(true);
@@ -38,7 +39,11 @@ Command.solve = (context, message, commandArguments) => {
   const [faultyIndex, samples] = convertSamples(rawSamples);
 
   if (faultyIndex >= 0 || samples == undefined) {
-    seal.replyToSender(context, message, `样本 ${rawSamples[faultyIndex]} 无效(必须为数字且不能为Infinity)`);
+    seal.replyToSender(
+      context,
+      message,
+      `样本 ${rawSamples[faultyIndex]} 无效(必须为数字且不能为Infinity)`,
+    );
     return commandExecutionResult;
   }
 
@@ -63,7 +68,11 @@ Command.solve = (context, message, commandArguments) => {
 
   results.push(`极差: ${range}`);
 
-  seal.replyToSender(context, message, `样本总数 ${samples.length}，统计如下:\n${results.join("\n")}`);
+  seal.replyToSender(
+    context,
+    message,
+    `样本总数 ${samples.length}，统计如下:\n${results.join("\n")}`,
+  );
 
   return commandExecutionResult;
 };
@@ -80,11 +89,20 @@ function calculateMean(samples: number[], sum: number) {
 }
 
 function calculateVarianceN(samples: number[], mean: number) {
-  return samples.map((i) => Math.pow(i - mean, 2)).reduce((acc, item) => acc + item, 0) / samples.length;
+  return (
+    samples
+      .map((i) => Math.pow(i - mean, 2))
+      .reduce((acc, item) => acc + item, 0) / samples.length
+  );
 }
 
 function calculateVarianceN_1(samples: number[], mean: number) {
-  return samples.map((i) => Math.pow(i - mean, 2)).reduce((acc, item) => acc + item, 0) / (samples.length - 1);
+  return (
+    samples
+      .map((i) => Math.pow(i - mean, 2))
+      .reduce((acc, item) => acc + item, 0) /
+    (samples.length - 1)
+  );
 }
 
 function calculateMedian(samples: number[]) {

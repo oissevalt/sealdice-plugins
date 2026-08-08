@@ -3,7 +3,7 @@
 // @author       檀轶步棋
 // @version      1.0.1
 // @timestamp    2025-08-05 18:00
-// @license      MIT
+// @license      GNU GPLv3
 // @description  在 .log on 时，定位到上一次 .log off 的位置
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
@@ -35,7 +35,11 @@ Extension.onCommandReceived = (context, message, argument) => {
         return;
       }
       const replyMessage = seal.ext.getStringConfig(Extension, REPLY_MSG);
-      seal.replyToSender(context, message, `[CQ:reply,id=${lastLog}] ${replyMessage}`);
+      seal.replyToSender(
+        context,
+        message,
+        `[CQ:reply,id=${lastLog}] ${replyMessage}`,
+      );
       break;
     case "off":
       setLogEnd(context.group.groupId, message.rawId);
@@ -67,7 +71,7 @@ function getOrRegisterExtension(): seal.ExtInfo {
       ext,
       REPLY_MSG,
       "（上一次log结束在此处，可能由于消息过于久远而无法定位）",
-      "回复上一条记录时的信息"
+      "回复上一条记录时的信息",
     );
   }
   return ext;

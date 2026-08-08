@@ -3,7 +3,7 @@
 // @author       檀轶步棋
 // @version      1.1.0
 // @timestamp    2025-08-04 16:30
-// @license      MIT
+// @license      GNU GPLv3
 // @description  To evaluate JavaScript from commands for debugging.
 // @homepageURL  https://github.com/oissevalt
 // ==/UserScript==
@@ -24,7 +24,11 @@ CommandEval.help = ".eval <JavaScript>";
 CommandEval.solve = (context, message, argument) => {
   const executionResult = seal.ext.newCmdExecuteResult(true);
   if (context.privilegeLevel < 100 /* bot owner */) {
-    seal.replyToSender(context, message, "You must have Owner privileges to use eval.");
+    seal.replyToSender(
+      context,
+      message,
+      "You must have Owner privileges to use eval.",
+    );
     return executionResult;
   }
   const result = eval(argument.getRestArgsFrom(1));
